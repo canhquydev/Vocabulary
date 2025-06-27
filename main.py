@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
-import pyodbc
+# import pyodbc
 import random
 import requests
 import json
@@ -92,31 +92,37 @@ def cut_sentence_around_phrase(sentence, target_phrase, word):
 def get_db_connection():
     # Lấy chuỗi kết nối từ biến môi trường trên Render
     # Biến môi trường này sẽ được cấu hình trên Render dashboard
-    neon_conn_string = os.environ.get('postgresql://neondb_owner:npg_pHbqlg2CBW3z@ep-steep-thunder-a8a9o0f5-pooler.eastus2.azure.neon.tech/neondb?sslmode=require&channel_binding=require')
-
-    if neon_conn_string:
-        try:
+    neon_conn_string = os.environ.get('DATABASE_URL')
+    try:
             conn = psycopg2.connect(neon_conn_string)
             return conn
-        except Exception as e:
-            print(f"Error connecting to Neon database: {e}")
-            # Xử lý lỗi kết nối, có thể raise exception hoặc trả về None
-            raise
-    else:
-        # Fallback cho phát triển cục bộ với SQL Server nếu biến môi trường không tồn tại
-        # Đảm bảo bạn đã cài đặt pyodbc và driver cho SQL Server
-        try:
-            conn = pyodbc.connect(
-                'DRIVER={ODBC Driver 17 for SQL Server};'
-                'SERVER=0D75D1721846358\\SQLEXPRESS;'
-                'DATABASE=QL;'
-                'UID=sa;'
-                'PWD=123456789'
-            )
-            return conn
-        except Exception as e:
-            print(f"Error connecting to local SQL Server: {e}")
-            raise
+    except Exception as e:
+        print(f"Error connecting to Neon database: {e}")
+        # Xử lý lỗi kết nối, có thể raise exception hoặc trả về None
+        raise
+    # if neon_conn_string:
+    #     try:
+    #         conn = psycopg2.connect(neon_conn_string)
+    #         return conn
+    #     except Exception as e:
+    #         print(f"Error connecting to Neon database: {e}")
+    #         # Xử lý lỗi kết nối, có thể raise exception hoặc trả về None
+    #         raise
+    # else:
+    #     # Fallback cho phát triển cục bộ với SQL Server nếu biến môi trường không tồn tại
+    #     # Đảm bảo bạn đã cài đặt pyodbc và driver cho SQL Server
+    #     try:
+    #         conn = pyodbc.connect(
+    #             'DRIVER={ODBC Driver 17 for SQL Server};'
+    #             'SERVER=0D75D1721846358\\SQLEXPRESS;'
+    #             'DATABASE=QL;'
+    #             'UID=sa;'
+    #             'PWD=123456789'
+    #         )
+    #         return conn
+    #     except Exception as e:
+    #         print(f"Error connecting to local SQL Server: {e}")
+    #         raise
 # def get_db_connection():
 #     conn = pyodbc.connect(
 #         'DRIVER={ODBC Driver 17 for SQL Server};'
