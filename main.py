@@ -329,7 +329,7 @@ def check_answer():
         meaning = current_word_data.get('mean', 'Không tìm thấy nghĩa')
         return jsonify({
             "success": True, 
-            "message": "✅ Chính xác!", 
+            "message": "", 
             "word": correct_word.capitalize(), 
             "meaning": meaning
         })
