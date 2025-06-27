@@ -5,10 +5,8 @@ import json
 import os
 from functools import wraps
 from supabase import create_client, Client
-from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
-# Lấy secret key từ biến môi trường để bảo mật hơn
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "a-very-secret-key-for-development")
 
 # --- Cấu hình Supabase ---
@@ -21,24 +19,29 @@ except Exception as e:
     print(f"Lỗi khi khởi tạo Supabase client: {e}")
     supabase = None
 
-# --- API Cấu hình (Lấy từ biến môi trường) ---
-GEMINI_API_KEY_1 = os.environ.get("GEMINI_API_KEY_1")
-GEMINI_API_KEY_2 = os.environ.get("GEMINI_API_KEY_2")
+# --- Cấu hình API Gemini (Linh hoạt hơn) ---
 
+# Đọc chuỗi các API key từ một biến môi trường duy nhất
+gemini_keys_str = os.environ.get("GEMINI_API_KEYS", "")
+
+# Tách chuỗi thành một danh sách các key
+# Dùng list comprehension để tạo danh sách API_CONFIGS một cách tự động
 API_CONFIGS = [
-    {"url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=GEMINI_API_KEY", "key": GEMINI_API_KEY_1},
-    {"url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=GEMINI_API_KEY", "key": GEMINI_API_KEY_2}
-]
+    {
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=GEMINI_API_KEY",
+        "key": key.strip()  # .strip() để loại bỏ khoảng trắng thừa
+    }
+    for key in gemini_keys_str.split(',') if key.strip()
+] if gemini_keys_str else []
 
 # --- Các hàm phụ trợ ---
 def generate_sentence_with_word_and_meaning(word, meaning):
-    # Lọc ra các config có key hợp lệ
-    valid_configs = [config for config in API_CONFIGS if config.get("key")]
-    if not valid_configs:
-        print("Lỗi: Không có khóa API nào của Gemini được cấu hình.")
+    if not API_CONFIGS:
+        print("Lỗi: Không có khóa API nào của Gemini được cấu hình trong biến môi trường GEMINI_API_KEYS.")
         return None
 
-    for config in valid_configs:
+    # Logic xoay vòng key không cần thay đổi, nó sẽ tự động duyệt qua danh sách API_CONFIGS
+    for config in API_CONFIGS:
         final_url = config['url'].replace('GEMINI_API_KEY', config['key'])
         key_identifier = config['key'][:10]
         headers = {"Content-Type": "application/json"}
@@ -112,16 +115,11 @@ def login():
     if request.method == "POST":
         username = request.form.get("username")
         password = request.form.get("password")
-        response = supabase.table('account').select("*").eq('username', username).execute()
-        
-        user = None
-        if response.data:
-            user_data = response.data[0]
-            # So sánh mật khẩu người dùng nhập với mật khẩu đã băm trong DB
-            if check_password_hash(user_data['password'], password):
-                user = user_data
 
-        if user:
+        response = supabase.table('account').select("*").eq('username', username).eq('password', password).execute()
+        
+        if response.data:
+            user = response.data[0]
             if user['active'] == 0:
                 flash("Tài khoản của bạn chưa được kích hoạt. Vui lòng liên hệ admin.", "danger")
                 return redirect(url_for("login"))
@@ -153,12 +151,10 @@ def register():
             flash("Tên đăng nhập đã tồn tại!", "danger")
             return redirect(url_for("register"))
 
-        # Băm mật khẩu trước khi lưu
-        hashed_password = generate_password_hash(password)
         roles, active = "user", 0
         supabase.table('account').insert({
             "username": username,
-            "password": hashed_password,
+            "password": password,
             "roles": roles,
             "active": active
         }).execute()
@@ -176,7 +172,6 @@ def home():
         return render_template("home.html", username=session["username"], sentence="Bạn chưa có từ vựng nào. Hãy thêm ở trang Quản lý từ vựng.", correct_word="", question_info="0/0", roles=session.get("roles"))
     
     next_word_info = get_next_word_data()
-    # **SỬA LỖI**: Tạo chuỗi question_info cho lần tải trang đầu tiên
     question_info_str = f"Câu {next_word_info.get('question_number', 0)}/{next_word_info.get('total_questions', 0)}"
 
     return render_template("home.html", 
@@ -313,7 +308,6 @@ def get_next_word_data():
     total_questions = session.get('total_words', 0)
     question_number = total_questions - len(available_words)
 
-    # **SỬA LỖI**: Trả về các giá trị số để JavaScript xử lý
     return {
         "completed": False, 
         "sentence": hidden_sentence, 
@@ -381,5 +375,6 @@ def logout():
 if __name__ == "__main__":
     if not supabase:
         print("CRITICAL ERROR: Could not connect to Supabase. Check your environment variables.")
-    else:
-        app.run(debug=True)
+    elif not API_CONFIGS:
+        print("WARNING: No Gemini API keys found. The sentence generation feature will not work.")
+    app.run(debug=True)
