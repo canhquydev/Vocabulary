@@ -199,7 +199,7 @@
     <p id="question-counter">{{ question_info }}</p>
     <p id="sentence-display">{{ sentence }}</p>
 
-    <form id="answer-form">
+    <form id="answer-form" autocomplete="off"> 
       <input type="hidden" name="correct_word" id="correct-word-input" value="{{ correct_word }}">
       <input type="text" name="answer" id="user-answer-input" placeholder="Nhập từ bị ẩn" required disabled>
       <button type="submit" id="check-button">Kiểm tra</button>
