@@ -137,12 +137,13 @@
       margin-bottom: 15px;
     }
     .message-info {
-      color: #17a2b8;
+      color: red;
       background-color: #d1ecf1;
       border: 1px solid #bee5eb;
       padding: 10px;
       border-radius: 5px;
       margin-bottom: 15px;
+      font-weight: bold;
     }
     .loading-spinner {
       border: 2px solid rgba(255, 255, 255, 0.3);
@@ -200,7 +201,7 @@
 
     <form id="answer-form">
       <input type="hidden" name="correct_word" id="correct-word-input" value="{{ correct_word }}">
-      <input type="text" name="answer" id="user-answer-input" placeholder="Nhập từ bị ẩn" required>
+      <input type="text" name="answer" id="user-answer-input" placeholder="Nhập từ bị ẩn" required disabled>
       <button type="submit" id="check-button">Kiểm tra</button>
     </form>
 
@@ -326,7 +327,7 @@
         skipButton.addEventListener('click', async function() {
             const currentWord = correctWordInput.value;
             if(currentWord) {
-                skipRevealMessage.textContent = `Đáp án câu trước là: ${currentWord}`;
+                skipRevealMessage.textContent = `Đáp án là: ${currentWord}`;
                 skipRevealMessage.className = 'message-info';
             }
             await fetchNextWord();
