@@ -5,46 +5,47 @@ import json
 import os
 from functools import wraps
 from supabase import create_client, Client
+from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
-app.secret_key = 'quy_secret_key'
+# Lấy secret key từ biến môi trường để bảo mật hơn
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "a-very-secret-key-for-development")
 
 # --- Cấu hình Supabase ---
-# Lấy URL và Key từ biến môi trường bạn đã thiết lập
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
-# Khởi tạo client để tương tác với Supabase
-# Client này sẽ được tái sử dụng trong toàn bộ ứng dụng
 try:
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 except Exception as e:
     print(f"Lỗi khi khởi tạo Supabase client: {e}")
     supabase = None
 
-# --- API Cấu hình (Không thay đổi) ---
-# Bạn cần điền lại các khóa API của mình vào đây
+# --- API Cấu hình (Lấy từ biến môi trường) ---
+GEMINI_API_KEY_1 = os.environ.get("GEMINI_API_KEY_1")
+GEMINI_API_KEY_2 = os.environ.get("GEMINI_API_KEY_2")
+
 API_CONFIGS = [
-    {
-        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=GEMINI_API_KEY",
-        "key": "AIzaSyB6oo4MOqTTq07tLpWozpZ2NoKo45vLc14" 
-    },
-    {
-        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=GEMINI_API_KEY",
-        "key": "AIzaSyCTHUesZlrg23UFTTVpDEGe54gSpHdZ9KU"
-    }
+    {"url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=GEMINI_API_KEY", "key": GEMINI_API_KEY_1},
+    {"url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=GEMINI_API_KEY", "key": GEMINI_API_KEY_2}
 ]
 
-# --- Các hàm phụ trợ (Không thay đổi) ---
+# --- Các hàm phụ trợ ---
 def generate_sentence_with_word_and_meaning(word, meaning):
-    for config in API_CONFIGS:
+    # Lọc ra các config có key hợp lệ
+    valid_configs = [config for config in API_CONFIGS if config.get("key")]
+    if not valid_configs:
+        print("Lỗi: Không có khóa API nào của Gemini được cấu hình.")
+        return None
+
+    for config in valid_configs:
         final_url = config['url'].replace('GEMINI_API_KEY', config['key'])
         key_identifier = config['key'][:10]
         headers = {"Content-Type": "application/json"}
         data = {"contents": [{"parts": [{"text": f"Create a natural English sentence for IT context, 15-20 words, using the word '{word}' which means '{meaning}'."}]}]}
         print(f"🔄 Đang thử với khóa API: {key_identifier}...")
         try:
-            response = requests.post(final_url, headers=headers, data=json.dumps(data))
+            response = requests.post(final_url, headers=headers, data=json.dumps(data), timeout=15)
             if response.status_code == 200:
                 print(f"✅ Thành công với khóa {key_identifier}!")
                 response_data = response.json()
@@ -54,7 +55,7 @@ def generate_sentence_with_word_and_meaning(word, meaning):
                 print(f"⚠️ Khóa {key_identifier} đã bị giới hạn. Chuyển sang khóa tiếp theo.")
                 continue
             else:
-                print(f"❌ Lỗi với khóa {key_identifier} (Mã lỗi: {response.status_code}). Chuyển sang khóa tiếp theo.")
+                print(f"❌ Lỗi với khóa {key_identifier} (Mã lỗi: {response.status_code}). Chi tiết: {response.text}")
                 continue
         except requests.RequestException as e:
             print(f"❌ Lỗi kết nối mạng với khóa {key_identifier}: {e}")
@@ -66,7 +67,7 @@ def hidden_format(text):
     result = []
     for word in words:
         if len(word) > 0:
-            hidden_word = word[0] + '_' + ' _' * (len(word) - 2) if len(word) > 1 else word
+            hidden_word = word[0] + ' _' * (len(word) - 1) if len(word) > 1 else word
             result.append(hidden_word)
     return ' '.join(result)
 
@@ -80,7 +81,7 @@ def cut_sentence_around_phrase(sentence, target_phrase, word):
     after_phrase = sentence[end_index:].strip()
     return before_phrase + " " + hidden_format(word) + " " + after_phrase
     
-# --- Decorators (Không thay đổi) ---
+# --- Decorators ---
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -111,12 +112,16 @@ def login():
     if request.method == "POST":
         username = request.form.get("username")
         password = request.form.get("password")
-
-        # Sử dụng Supabase để truy vấn
-        response = supabase.table('account').select("*").eq('username', username).eq('password', password).execute()
+        response = supabase.table('account').select("*").eq('username', username).execute()
         
+        user = None
         if response.data:
-            user = response.data[0]
+            user_data = response.data[0]
+            # So sánh mật khẩu người dùng nhập với mật khẩu đã băm trong DB
+            if check_password_hash(user_data['password'], password):
+                user = user_data
+
+        if user:
             if user['active'] == 0:
                 flash("Tài khoản của bạn chưa được kích hoạt. Vui lòng liên hệ admin.", "danger")
                 return redirect(url_for("login"))
@@ -143,17 +148,17 @@ def register():
             flash("Mật khẩu không khớp.", "danger")
             return redirect(url_for("register"))
         
-        # Kiểm tra username đã tồn tại chưa
         response = supabase.table('account').select("id").eq('username', username).execute()
         if response.data:
             flash("Tên đăng nhập đã tồn tại!", "danger")
             return redirect(url_for("register"))
 
-        # Thêm user mới
+        # Băm mật khẩu trước khi lưu
+        hashed_password = generate_password_hash(password)
         roles, active = "user", 0
         supabase.table('account').insert({
             "username": username,
-            "password": password,
+            "password": hashed_password,
             "roles": roles,
             "active": active
         }).execute()
@@ -171,11 +176,14 @@ def home():
         return render_template("home.html", username=session["username"], sentence="Bạn chưa có từ vựng nào. Hãy thêm ở trang Quản lý từ vựng.", correct_word="", question_info="0/0", roles=session.get("roles"))
     
     next_word_info = get_next_word_data()
+    # **SỬA LỖI**: Tạo chuỗi question_info cho lần tải trang đầu tiên
+    question_info_str = f"Câu {next_word_info.get('question_number', 0)}/{next_word_info.get('total_questions', 0)}"
+
     return render_template("home.html", 
                            username=session["username"],
                            sentence=next_word_info.get("sentence"), 
                            correct_word=next_word_info.get("correct_word"),
-                           question_info=next_word_info.get("question_info"),
+                           question_info=question_info_str,
                            roles=session.get("roles"))
 
 # --- Chức năng quản lý từ vựng ---
@@ -300,14 +308,18 @@ def get_next_word_data():
     meaning = selected_word_data['mean']
     
     sentence = generate_sentence_with_word_and_meaning(word, meaning)
-
     hidden_sentence = cut_sentence_around_phrase(sentence, word, word) if sentence else f"Không thể tạo câu cho từ '{word}'. Vui lòng thử lại."
 
+    total_questions = session.get('total_words', 0)
+    question_number = total_questions - len(available_words)
+
+    # **SỬA LỖI**: Trả về các giá trị số để JavaScript xử lý
     return {
         "completed": False, 
         "sentence": hidden_sentence, 
         "correct_word": word,
-        "question_info": f"Câu {session.get('total_words', 0) - len(available_words)}/{session.get('total_words', 0)}"
+        "question_number": question_number,
+        "total_questions": total_questions
     }
 
 @app.route("/check_answer", methods=["POST"])
@@ -320,7 +332,6 @@ def check_answer():
         current_word_data = session.get('current_word_data')
         if not current_word_data:
             return jsonify({"success": False, "message": "Lỗi session."})
-
         meaning = current_word_data.get('mean', 'Không tìm thấy nghĩa')
         return jsonify({
             "success": True, 
