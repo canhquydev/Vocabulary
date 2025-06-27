@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Đăng nhập</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #f0f2f5;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
+      color: #333;
+    }
+    .container {
+      background-color: #ffffff;
+      padding: 40px;
+      border-radius: 10px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+      text-align: center;
+      width: 100%;
+      max-width: 400px;
+      box-sizing: border-box;
+    }
+    h2 {
+      color: #007bff;
+      margin-bottom: 30px;
+      font-size: 2em;
+      font-weight: 600;
+    }
+    form {
+      margin-bottom: 20px;
+    }
+    input[type="text"],
+    input[type="password"] {
+      width: calc(100% - 20px);
+      padding: 12px 10px;
+      margin-bottom: 15px;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      font-size: 1em;
+      transition: border-color 0.3s ease, box-shadow 0.3s ease;
+      box-sizing: border-box;
+    }
+    input[type="text"]:focus,
+    input[type="password"]:focus {
+      border-color: #007bff;
+      box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.25);
+      outline: none;
+    }
+    button {
+      width: 100%;
+      padding: 12px;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      font-size: 1.1em;
+      cursor: pointer;
+      transition: background-color 0.3s ease, transform 0.2s ease;
+      margin-bottom: 10px;
+    }
+    button:hover {
+      background-color: #0056b3;
+      transform: translateY(-2px);
+    }
+    button:active {
+      transform: translateY(0);
+    }
+    #loading-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(255, 255, 255, 0.8);
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+      font-size: 1.5em;
+      color: #007bff;
+      flex-direction: column;
+    }
+    .spinner {
+      border: 4px solid rgba(0, 123, 255, 0.3);
+      border-top: 4px solid #007bff;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+      margin-bottom: 10px;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Đăng nhập</h2>
+    <form method="POST" action="/login" id="login-form">
+      <input name="username" type="text" placeholder="Tên đăng nhập" required><br><br>
+      <input name="password" type="password" placeholder="Mật khẩu" required><br><br>
+      <button type="submit">Đăng nhập</button>
+    </form>
+    <form method="GET" action="/register">
+      <button type="submit" style="background-color: #6c757d;">Tạo tài khoản</button>
+    </form>
+  </div>
+
+  <div id="loading-overlay">
+    <div class="spinner"></div>
+    Đang xử lý...
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const loginForm = document.getElementById('login-form');
+      const loadingOverlay = document.getElementById('loading-overlay');
+
+      loginForm.addEventListener('submit', function() {
+        loadingOverlay.style.display = 'flex';
+      });
+
+      // You might also want to hide the loading overlay if login fails and returns to the same page.
+      // This part would depend on how your Flask app handles error responses.
+      // For a simple refresh, the loading overlay will disappear on page load.
+      // If using AJAX for login, you would hide it in the AJAX callback.
+    });
+  </script>
+</body>
+</html>

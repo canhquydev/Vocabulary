@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Trang chính</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #f0f2f5;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
+      color: #333;
+      padding: 20px;
+      box-sizing: border-box;
+    }
+    .container {
+      background-color: #ffffff;
+      padding: 40px;
+      border-radius: 10px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+      text-align: center;
+      width: 100%;
+      max-width: 1000px;
+      box-sizing: border-box;
+    }
+    h2 {
+      color: #007bff;
+      margin-bottom: 20px;
+      font-size: 2em;
+      font-weight: 600;
+    }
+    h3 {
+      color: #555;
+      margin-top: 30px;
+      margin-bottom: 15px;
+      font-size: 1.5em;
+    }
+    #sentence-display {
+      background-color: #e9f2ff;
+      border: 1px dashed #a0c4ff;
+      padding: 20px;
+      margin-bottom: 25px;
+      border-radius: 8px;
+      font-size: 1.2em;
+      line-height: 1.6;
+      color: #333;
+      min-height: 80px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    form {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 15px;
+      margin-bottom: 25px;
+    }
+    input[type="text"] {
+      flex-grow: 1;
+      max-width: 300px;
+      padding: 12px 15px;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      font-size: 1em;
+      transition: border-color 0.3s ease, box-shadow 0.3s ease;
+      box-sizing: border-box;
+    }
+    input[type="text"]:focus {
+      border-color: #007bff;
+      box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.25);
+      outline: none;
+    }
+    button {
+      padding: 12px 25px;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      font-size: 1em;
+      cursor: pointer;
+      transition: background-color 0.3s ease, transform 0.2s ease, opacity 0.3s ease;
+      min-width: 120px; /* Ensure buttons have a minimum width */
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    button:hover:not(:disabled) {
+      background-color: #0056b3;
+      transform: translateY(-2px);
+    }
+    button:active:not(:disabled) {
+      transform: translateY(0);
+    }
+    button:disabled {
+      background-color: #cccccc;
+      cursor: not-allowed;
+      opacity: 0.7;
+    }
+    .button-group {
+      display: flex;
+      justify-content: center;
+      gap: 15px;
+      margin-bottom: 25px;
+      flex-wrap: wrap;
+    }
+    .message-success {
+      color: #28a745;
+      background-color: #d4edda;
+      border: 1px solid #c3e6cb;
+      padding: 10px;
+      border-radius: 5px;
+      margin-bottom: 15px;
+    }
+    .message-danger {
+      color: #dc3545;
+      background-color: #f8d7da;
+      border: 1px solid #f5c6cb;
+      padding: 10px;
+      border-radius: 5px;
+      margin-bottom: 15px;
+    }
+    .message-info {
+      color: #17a2b8;
+      background-color: #d1ecf1;
+      border: 1px solid #bee5eb;
+      padding: 10px;
+      border-radius: 5px;
+      margin-bottom: 15px;
+    }
+    .loading-spinner {
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-top: 2px solid #ffffff;
+      border-radius: 50%;
+      width: 16px;
+      height: 16px;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    a {
+      color: #007bff;
+      text-decoration: none;
+      margin-top: 20px;
+      padding: 10px 20px;
+      border: 1px solid #007bff;
+      border-radius: 5px;
+      transition: background-color 0.3s ease, color 0.3s ease;
+    }
+    a:hover {
+      background-color: #007bff;
+      color: white;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Chào mừng {{ username }}!</h2>
+
+    <h3>Câu hỏi:</h3>
+    <p id="sentence-display">{{ sentence }}</p>
+
+    <form id="answer-form">
+      <input type="hidden" name="correct_word" id="correct-word-input" value="{{ correct_word }}">
+      <input type="text" name="answer" id="user-answer-input" placeholder="Nhập từ bị ẩn" required>
+      <button type="submit" id="check-button">Kiểm tra</button>
+    </form>
+
+    <div class="button-group">
+      <button id="skip-button">Bỏ qua</button>
+      <button id="regenerate-button">Tạo lại câu</button>
+    </div>
+
+    <p id="feedback-message"></p>
+    <p id="skip-reveal-message"></p>
+
+    <br>
+    <a href="/logout" id="logout-link">Đăng xuất</a>
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const answerForm = document.getElementById('answer-form');
+      const userAnswerInput = document.getElementById('user-answer-input');
+      const correctWordInput = document.getElementById('correct-word-input');
+      const sentenceDisplay = document.getElementById('sentence-display');
+      const feedbackMessage = document.getElementById('feedback-message');
+      const skipRevealMessage = document.getElementById('skip-reveal-message');
+      const skipButton = document.getElementById('skip-button');
+      const regenerateButton = document.getElementById('regenerate-button');
+      const checkButton = document.getElementById('check-button');
+      const logoutLink = document.getElementById('logout-link');
+
+      function showLoading(button, text) {
+        button.disabled = true;
+        button.innerHTML = `<span class="loading-spinner"></span> ${text}...`;
+      }
+
+      function hideLoading(button, originalText) {
+        button.disabled = false;
+        button.innerHTML = originalText;
+      }
+
+      // Hàm để tải từ và câu mới
+      async function fetchNewWord() {
+        showLoading(skipButton, 'Đang tải'); // Show loading on skip button
+        try {
+          const response = await fetch('/skip_word', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Requested-With': 'XMLHttpRequest'
+            }
+          });
+
+          const data = await response.json();
+
+          if (data.success) {
+            sentenceDisplay.textContent = data.new_sentence;
+            correctWordInput.value = data.new_correct_word;
+            userAnswerInput.value = ''; // Xóa trường nhập liệu
+            feedbackMessage.textContent = ''; // Xóa thông báo phản hồi
+            skipRevealMessage.textContent = ''; // Xóa thông báo bỏ qua
+          } else {
+            feedbackMessage.textContent = data.message;
+            feedbackMessage.className = 'message-danger';
+          }
+        } catch (error) {
+          console.error('Error fetching new word:', error);
+          feedbackMessage.textContent = 'Lỗi khi tải từ mới.';
+          feedbackMessage.className = 'message-danger';
+        } finally {
+          hideLoading(skipButton, 'Bỏ qua'); // Hide loading on skip button
+        }
+      }
+
+      answerForm.addEventListener('submit', async function(event) {
+        event.preventDefault();
+        // Removed showLoading(checkButton, 'Đang kiểm tra');
+
+        const userAnswer = userAnswerInput.value;
+        const correctWord = correctWordInput.value;
+
+        feedbackMessage.textContent = '';
+        skipRevealMessage.textContent = '';
+
+        try {
+          const response = await fetch('/check_answer', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: JSON.stringify({ answer: userAnswer, correct_word: correctWord })
+          });
+
+          const data = await response.json();
+
+          if (data.success) {
+            feedbackMessage.textContent = `✅ Chính xác! ${data.word} - ${data.meaning}`;
+            feedbackMessage.className = 'message-success';
+            setTimeout(() => {
+              fetchNewWord();
+              // Removed hideLoading(checkButton, 'Kiểm tra');
+            }, 1500);
+          } else {
+            feedbackMessage.textContent = data.message;
+            feedbackMessage.className = 'message-danger';
+            // Removed hideLoading(checkButton, 'Kiểm tra');
+          }
+        } catch (error) {
+          console.error('Error checking answer:', error);
+          feedbackMessage.textContent = 'Lỗi khi kiểm tra đáp án.';
+          feedbackMessage.className = 'message-danger';
+          // Removed hideLoading(checkButton, 'Kiểm tra');
+        }
+      });
+
+      skipButton.addEventListener('click', async function() {
+        feedbackMessage.textContent = '';
+        skipRevealMessage.textContent = '';
+
+        const currentWord = correctWordInput.value;
+        skipRevealMessage.textContent = `Đáp án của câu trước là: ${currentWord}`;
+        skipRevealMessage.className = 'message-info';
+
+        await fetchNewWord();
+      });
+
+      regenerateButton.addEventListener('click', async function() {
+        feedbackMessage.textContent = '';
+        skipRevealMessage.textContent = '';
+        showLoading(regenerateButton, 'Đang tạo'); // Show loading on regenerate button
+
+        const currentWord = correctWordInput.value;
+
+        try {
+          const response = await fetch('/regenerate_sentence', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: JSON.stringify({ word: currentWord })
+          });
+
+          const data = await response.json();
+
+          if (data.success) {
+            sentenceDisplay.textContent = data.new_sentence;
+            userAnswerInput.value = '';
+          } else {
+            feedbackMessage.textContent = data.message;
+            feedbackMessage.className = 'message-danger';
+          }
+        } catch (error) {
+          console.error('Error regenerating sentence:', error);
+          feedbackMessage.textContent = 'Lỗi khi tạo lại câu.';
+          feedbackMessage.className = 'message-danger';
+        } finally {
+          hideLoading(regenerateButton, 'Tạo lại câu'); // Hide loading on regenerate button
+        }
+      });
+
+      logoutLink.addEventListener('click', function(event) {
+        // Simple loading for logout, as it navigates away.
+        event.preventDefault();
+        const originalText = logoutLink.textContent;
+        logoutLink.textContent = 'Đang đăng xuất...';
+        logoutLink.style.pointerEvents = 'none'; // Disable clicks
+        logoutLink.style.opacity = '0.7';
+
+        window.location.href = logoutLink.href; // Proceed with logout
+      });
+    });
+  </script>
+</body>
+</html>
