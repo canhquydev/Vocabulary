@@ -199,9 +199,9 @@
     <p id="question-counter">{{ question_info }}</p>
     <p id="sentence-display">{{ sentence }}</p>
 
-    <form id="answer-form""> 
+    <form id="answer-form"> 
       <input type="hidden" name="correct_word" id="correct-word-input" value="{{ correct_word }}">
-      <input type="text" name="answer" id="user-answer-input" placeholder="Nhập từ bị ẩn" autocomplete="off>
+      <input type="text" name="a_{{ loop.index }}" id="user-answer-input" placeholder="Nhập từ bị ẩn">
       <button type="submit" id="check-button">Kiểm tra</button>
     </form>
 
