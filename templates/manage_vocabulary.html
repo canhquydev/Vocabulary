@@ -22,16 +22,16 @@
 
         <div class="card mb-4">
             <div class="card-header">
-                Thêm từ vựng mới
+                Thêm từ vựng mới (Thêm nhiều dòng)
             </div>
             <div class="card-body">
                 <form action="{{ url_for('add_vocabulary') }}" method="POST">
                     <div class="form-group">
-                        <label for="vocab_input">Nhập từ vựng</label>
-                        <input type="text" class="form-control" id="vocab_input" name="vocab_input" placeholder="Định dạng: Word - Mean" required>
-                        <small class="form-text text-muted">Hệ thống sẽ tự động tách từ và nghĩa dựa trên dấu "-".</small>
+                        <label for="vocab_input_list">Dán danh sách từ vựng vào đây:</label>
+                        <textarea class="form-control" id="vocab_input_list" name="vocab_input_list" rows="8" placeholder="Word 1 - Meaning 1&#10;Word 2 - Meaning 2&#10;..."></textarea>
+                        <small class="form-text text-muted">Mỗi dòng là một cặp 'Từ - Nghĩa'. Hệ thống sẽ tự động bỏ qua các dòng trống hoặc không đúng định dạng.</small>
                     </div>
-                    <button type="submit" class="btn btn-primary">Thêm từ</button>
+                    <button type="submit" class="btn btn-primary">Thêm danh sách</button>
                 </form>
             </div>
         </div>
@@ -46,12 +46,12 @@
                 {% endif %}
             </div>
             <div class="card-body">
-                <table class="table table-striped">
-                    <thead>
+                <table class="table table-striped table-hover">
+                    <thead class="thead-dark">
                         <tr>
                             <th style="width: 35%;">Từ (Word)</th>
                             <th style="width: 50%;">Nghĩa (Mean)</th>
-                            <th style="width: 15%;">Hành động</th>
+                            <th style="width: 15%;" class="text-center">Hành động</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -59,7 +59,7 @@
                         <tr>
                             <td>{{ vocab[1] }}</td>
                             <td>{{ vocab[2] }}</td>
-                            <td>
+                            <td class="text-center">
                                 <form action="{{ url_for('delete_vocabulary', vocab_id=vocab[0]) }}" method="POST" class="d-inline">
                                     <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Bạn có chắc muốn xóa từ `{{ vocab[1] }}` không?');">Xóa</button>
                                 </form>

@@ -178,25 +178,50 @@ def manage_vocabulary():
 @app.route("/add_vocabulary", methods=["POST"])
 @login_required
 def add_vocabulary():
-    vocab_input = request.form.get("vocab_input")
-    if not vocab_input or '-' not in vocab_input:
-        flash("Định dạng không hợp lệ. Vui lòng nhập theo dạng 'Word - Mean'.", "danger")
-        return redirect(url_for("manage_vocabulary"))
-    parts = [p.strip() for p in vocab_input.split('-', 1)]
-    if len(parts) != 2 or not parts[0] or not parts[1]:
-        flash("Từ và nghĩa không được để trống.", "danger")
-        return redirect(url_for("manage_vocabulary"))
-    word, mean = parts
+    vocab_input = request.form.get("vocab_input_list")
     user_id = session.get("user_id")
+    
+    if not vocab_input.strip():
+        flash("Vui lòng nhập ít nhất một từ vựng.", "danger")
+        return redirect(url_for("manage_vocabulary"))
+
+    lines = vocab_input.strip().split('\n')
+    new_vocabs = []
+    invalid_lines = 0
+
+    for line in lines:
+        line = line.strip()
+        if not line or '-' not in line:
+            if line: invalid_lines += 1
+            continue
+        
+        parts = [p.strip() for p in line.split('-', 1)]
+        if len(parts) == 2 and parts[0] and parts[1]:
+            new_vocabs.append((parts[0], parts[1], user_id))
+        else:
+            invalid_lines += 1
+
+    if not new_vocabs:
+        flash("Không có từ vựng hợp lệ nào được tìm thấy. Vui lòng kiểm tra lại định dạng.", "danger")
+        return redirect(url_for("manage_vocabulary"))
+
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("INSERT INTO vocabulary (word, mean, user_id) VALUES (%s, %s, %s)", (word, mean, user_id))
+        # Sử dụng executemany để thêm nhiều dòng hiệu quả hơn
+        query = "INSERT INTO vocabulary (word, mean, user_id) VALUES (%s, %s, %s)"
+        cursor.executemany(query, new_vocabs)
         conn.commit()
         conn.close()
-        flash(f"Đã thêm từ vựng '{word}' thành công!", "success")
+        
+        success_message = f"Đã thêm thành công {len(new_vocabs)} từ vựng!"
+        if invalid_lines > 0:
+            success_message += f" (Bỏ qua {invalid_lines} dòng không hợp lệ)."
+        flash(success_message, "success")
+
     except Exception as e:
         flash(f"Lỗi khi thêm từ vựng: {e}", "danger")
+
     return redirect(url_for("manage_vocabulary"))
 
 @app.route("/delete_vocabulary/<int:vocab_id>", methods=["POST"])
@@ -206,7 +231,6 @@ def delete_vocabulary(vocab_id):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        # Thêm user_id vào câu lệnh DELETE để đảm bảo user chỉ xóa được từ của mình
         cursor.execute("DELETE FROM vocabulary WHERE id = %s AND user_id = %s", (vocab_id, user_id))
         conn.commit()
         conn.close()
@@ -222,7 +246,6 @@ def delete_all_vocabulary():
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        # Thay TRUNCATE bằng DELETE có điều kiện
         cursor.execute("DELETE FROM vocabulary WHERE user_id = %s", (user_id,))
         conn.commit()
         conn.close()
