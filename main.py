@@ -2,14 +2,28 @@ from flask import Flask, render_template, request, redirect, url_for, session, j
 import random
 import requests
 import json
-import psycopg2
 import os
 from functools import wraps
+from supabase import create_client, Client
 
 app = Flask(__name__)
 app.secret_key = 'quy_secret_key'
 
+# --- Cấu hình Supabase ---
+# Lấy URL và Key từ biến môi trường bạn đã thiết lập
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+
+# Khởi tạo client để tương tác với Supabase
+# Client này sẽ được tái sử dụng trong toàn bộ ứng dụng
+try:
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+except Exception as e:
+    print(f"Lỗi khi khởi tạo Supabase client: {e}")
+    supabase = None
+
 # --- API Cấu hình (Không thay đổi) ---
+# Bạn cần điền lại các khóa API của mình vào đây
 API_CONFIGS = [
     {
         "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=GEMINI_API_KEY",
@@ -66,16 +80,7 @@ def cut_sentence_around_phrase(sentence, target_phrase, word):
     after_phrase = sentence[end_index:].strip()
     return before_phrase + " " + hidden_format(word) + " " + after_phrase
     
-def get_db_connection():
-    neon_conn_string = os.environ.get('DATABASE_URL')
-    try:
-        conn = psycopg2.connect(neon_conn_string)
-        return conn
-    except Exception as e:
-        print(f"Error connecting to Neon database: {e}")
-        raise
-
-# --- Decorators ---
+# --- Decorators (Không thay đổi) ---
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -97,6 +102,8 @@ def admin_required(f):
 # --- Route xác thực & trang chủ ---
 @app.route("/")
 def index():
+    if not supabase:
+        return "Lỗi: Không thể kết nối tới Supabase. Vui lòng kiểm tra lại biến môi trường.", 500
     return render_template("login.html")
 
 @app.route("/login", methods=["POST", "GET"])
@@ -104,24 +111,25 @@ def login():
     if request.method == "POST":
         username = request.form.get("username")
         password = request.form.get("password")
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        query = "SELECT id, username, roles, active FROM Account WHERE Username = %s AND Password = %s"
-        cursor.execute(query, (username, password))
-        user = cursor.fetchone()
-        conn.close()
-        if user:
-            if user[3] == 0:
+
+        # Sử dụng Supabase để truy vấn
+        response = supabase.table('account').select("*").eq('username', username).eq('password', password).execute()
+        
+        if response.data:
+            user = response.data[0]
+            if user['active'] == 0:
                 flash("Tài khoản của bạn chưa được kích hoạt. Vui lòng liên hệ admin.", "danger")
                 return redirect(url_for("login"))
-            session["user_id"] = user[0]
-            session["username"] = user[1]
-            session["roles"] = user[2]
+            
+            session["user_id"] = user['id']
+            session["username"] = user['username']
+            session["roles"] = user['roles']
             session.pop('available_words', None)
             return redirect(url_for("home"))
         else:
             flash("Sai tài khoản hoặc mật khẩu.", "danger")
             return redirect(url_for("login"))
+            
     return render_template("login.html")
 
 @app.route("/register", methods=["POST", "GET"])
@@ -130,23 +138,29 @@ def register():
         username = request.form.get("username")
         password = request.form.get("password")
         rpassword = request.form.get('rpassword')
+
         if password != rpassword:
             flash("Mật khẩu không khớp.", "danger")
             return redirect(url_for("register"))
-        roles, active = "user", 0
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM ACCOUNT WHERE Username = %s", (username,))
-        if cursor.fetchone():
-            conn.close()
+        
+        # Kiểm tra username đã tồn tại chưa
+        response = supabase.table('account').select("id").eq('username', username).execute()
+        if response.data:
             flash("Tên đăng nhập đã tồn tại!", "danger")
             return redirect(url_for("register"))
-        query = "INSERT INTO account (username, password, roles, active) VALUES (%s, %s, %s, %s)"
-        cursor.execute(query, (username, password, roles, active))
-        conn.commit()
-        conn.close()
+
+        # Thêm user mới
+        roles, active = "user", 0
+        supabase.table('account').insert({
+            "username": username,
+            "password": password,
+            "roles": roles,
+            "active": active
+        }).execute()
+
         flash("Đăng ký thành công! Vui lòng chờ admin kích hoạt tài khoản của bạn.", "success")
         return redirect(url_for("login"))
+        
     return render_template("register.html")
 
 @app.route("/home")
@@ -155,25 +169,22 @@ def home():
     load_and_shuffle_vocabulary()
     if not session.get('available_words'):
         return render_template("home.html", username=session["username"], sentence="Bạn chưa có từ vựng nào. Hãy thêm ở trang Quản lý từ vựng.", correct_word="", question_info="0/0", roles=session.get("roles"))
+    
     next_word_info = get_next_word_data()
     return render_template("home.html", 
                            username=session["username"],
                            sentence=next_word_info.get("sentence"), 
                            correct_word=next_word_info.get("correct_word"),
-                           question_info=f"{next_word_info.get('question_number', 0)}/{next_word_info.get('total_questions', 0)}",
+                           question_info=next_word_info.get("question_info"),
                            roles=session.get("roles"))
 
-# --- Chức năng quản lý từ vựng cho MỌI USER ---
+# --- Chức năng quản lý từ vựng ---
 @app.route("/manage_vocabulary")
 @login_required
 def manage_vocabulary():
     user_id = session.get("user_id")
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, word, mean FROM vocabulary WHERE user_id = %s ORDER BY id ASC", (user_id,))
-    all_vocab = cursor.fetchall()
-    conn.close()
-    return render_template("manage_vocabulary.html", all_vocab=all_vocab, username=session.get("username"))
+    response = supabase.table('vocabulary').select("id, word, mean").eq('user_id', user_id).order('id').execute()
+    return render_template("manage_vocabulary.html", all_vocab=response.data, username=session.get("username"))
 
 @app.route("/add_vocabulary", methods=["POST"])
 @login_required
@@ -186,7 +197,7 @@ def add_vocabulary():
         return redirect(url_for("manage_vocabulary"))
 
     lines = vocab_input.strip().split('\n')
-    new_vocabs = []
+    new_vocabs_to_insert = []
     invalid_lines = 0
 
     for line in lines:
@@ -197,28 +208,20 @@ def add_vocabulary():
         
         parts = [p.strip() for p in line.split('-', 1)]
         if len(parts) == 2 and parts[0] and parts[1]:
-            new_vocabs.append((parts[0], parts[1], user_id))
+            new_vocabs_to_insert.append({"word": parts[0], "mean": parts[1], "user_id": user_id})
         else:
             invalid_lines += 1
 
-    if not new_vocabs:
+    if not new_vocabs_to_insert:
         flash("Không có từ vựng hợp lệ nào được tìm thấy. Vui lòng kiểm tra lại định dạng.", "danger")
         return redirect(url_for("manage_vocabulary"))
 
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        # Sử dụng executemany để thêm nhiều dòng hiệu quả hơn
-        query = "INSERT INTO vocabulary (word, mean, user_id) VALUES (%s, %s, %s)"
-        cursor.executemany(query, new_vocabs)
-        conn.commit()
-        conn.close()
-        
-        success_message = f"Đã thêm thành công {len(new_vocabs)} từ vựng!"
+        supabase.table('vocabulary').insert(new_vocabs_to_insert).execute()
+        success_message = f"Đã thêm thành công {len(new_vocabs_to_insert)} từ vựng!"
         if invalid_lines > 0:
             success_message += f" (Bỏ qua {invalid_lines} dòng không hợp lệ)."
         flash(success_message, "success")
-
     except Exception as e:
         flash(f"Lỗi khi thêm từ vựng: {e}", "danger")
 
@@ -229,11 +232,7 @@ def add_vocabulary():
 def delete_vocabulary(vocab_id):
     user_id = session.get("user_id")
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM vocabulary WHERE id = %s AND user_id = %s", (vocab_id, user_id))
-        conn.commit()
-        conn.close()
+        supabase.table('vocabulary').delete().eq('id', vocab_id).eq('user_id', user_id).execute()
         flash("Đã xóa từ vựng thành công!", "success")
     except Exception as e:
         flash(f"Lỗi khi xóa từ vựng: {e}", "danger")
@@ -244,38 +243,25 @@ def delete_vocabulary(vocab_id):
 def delete_all_vocabulary():
     user_id = session.get("user_id")
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM vocabulary WHERE user_id = %s", (user_id,))
-        conn.commit()
-        conn.close()
+        supabase.table('vocabulary').delete().eq('user_id', user_id).execute()
         flash("Đã xóa toàn bộ từ vựng của bạn thành công!", "success")
     except Exception as e:
         flash(f"Lỗi khi xóa từ vựng: {e}", "danger")
     return redirect(url_for("manage_vocabulary"))
 
-# --- Chức năng của Admin (Chỉ quản lý tài khoản) ---
+# --- Chức năng của Admin ---
 @app.route("/manage_accounts")
 @admin_required
 def manage_accounts():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, username, roles FROM account WHERE active = 0")
-    inactive_accounts = cursor.fetchall()
-    cursor.execute("SELECT id, username, roles FROM account WHERE active = 1 AND roles != 'admin'")
-    active_accounts = cursor.fetchall()
-    conn.close()
-    return render_template("manage_accounts.html", inactive_accounts=inactive_accounts, active_accounts=active_accounts, username=session.get("username"))
+    inactive_res = supabase.table('account').select("id, username, roles").eq('active', 0).execute()
+    active_res = supabase.table('account').select("id, username, roles").eq('active', 1).neq('roles', 'admin').execute()
+    return render_template("manage_accounts.html", inactive_accounts=inactive_res.data, active_accounts=active_res.data, username=session.get("username"))
 
 @app.route("/activate_account/<int:account_id>", methods=["POST"])
 @admin_required
 def activate_account(account_id):
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("UPDATE account SET active = 1 WHERE id = %s", (account_id,))
-        conn.commit()
-        conn.close()
+        supabase.table('account').update({'active': 1}).eq('id', account_id).execute()
         flash("Kích hoạt tài khoản thành công!", "success")
     except Exception as e:
         flash(f"Lỗi khi kích hoạt tài khoản: {e}", "danger")
@@ -285,11 +271,7 @@ def activate_account(account_id):
 @admin_required
 def delete_account(account_id):
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM account WHERE id = %s", (account_id,))
-        conn.commit()
-        conn.close()
+        supabase.table('account').delete().eq('id', account_id).execute()
         flash("Xóa tài khoản thành công!", "success")
     except Exception as e:
         flash(f"Lỗi khi xóa tài khoản: {e}", "danger")
@@ -299,11 +281,8 @@ def delete_account(account_id):
 def load_and_shuffle_vocabulary():
     if 'user_id' not in session: return
     user_id = session.get("user_id")
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT word, mean FROM vocabulary WHERE user_id = %s", (user_id,))
-    all_words = [{'word': r[0], 'mean': r[1]} for r in cursor.fetchall()]
-    conn.close()
+    response = supabase.table('vocabulary').select("word, mean").eq('user_id', user_id).execute()
+    all_words = response.data
     random.shuffle(all_words)
     session['available_words'] = all_words
     session['total_words'] = len(all_words)
@@ -312,17 +291,23 @@ def load_and_shuffle_vocabulary():
 def get_next_word_data():
     available_words = session.get('available_words', [])
     if not available_words: return {"completed": True}
+    
     selected_word_data = available_words.pop(0)
     session['current_word_data'] = selected_word_data
     session.modified = True
+
     word = selected_word_data['word']
     meaning = selected_word_data['mean']
+    
     sentence = generate_sentence_with_word_and_meaning(word, meaning)
-    hidden_sentence = cut_sentence_around_phrase(sentence, word, word) if sentence else "Không thể tạo câu."
+
+    hidden_sentence = cut_sentence_around_phrase(sentence, word, word) if sentence else f"Không thể tạo câu cho từ '{word}'. Vui lòng thử lại."
+
     return {
-        "completed": False, "sentence": hidden_sentence, "correct_word": word,
-        "question_number": session.get('total_words', 0) - len(available_words),
-        "total_questions": session.get('total_words', 0)
+        "completed": False, 
+        "sentence": hidden_sentence, 
+        "correct_word": word,
+        "question_info": f"Câu {session.get('total_words', 0) - len(available_words)}/{session.get('total_words', 0)}"
     }
 
 @app.route("/check_answer", methods=["POST"])
@@ -330,22 +315,34 @@ def get_next_word_data():
 def check_answer():
     user_input = request.json.get("answer", "").strip().lower()
     correct_word = request.json.get("correct_word", "").strip().lower()
+
     if user_input == correct_word:
-        current_word_data = session.get('current_word_data', {})
-        return jsonify({"success": True, "message": "✅ Chính xác!", "word": correct_word, "meaning": current_word_data.get('mean', '')})
+        current_word_data = session.get('current_word_data')
+        if not current_word_data:
+            return jsonify({"success": False, "message": "Lỗi session."})
+
+        meaning = current_word_data.get('mean', 'Không tìm thấy nghĩa')
+        return jsonify({
+            "success": True, 
+            "message": "✅ Chính xác!", 
+            "word": correct_word.capitalize(), 
+            "meaning": meaning
+        })
     else:
         return jsonify({"success": False, "message": "❌ Sai rồi!"})
 
 @app.route("/next_word", methods=["POST"])
 @login_required
 def next_word():
-    return jsonify(get_next_word_data())
-
+    next_word_info = get_next_word_data()
+    return jsonify(next_word_info)
+    
 @app.route("/review", methods=["POST"])
 @login_required
 def review():
     load_and_shuffle_vocabulary()
-    return jsonify(get_next_word_data())
+    next_word_info = get_next_word_data()
+    return jsonify(next_word_info)
 
 @app.route("/regenerate_sentence", methods=["POST"])
 @login_required
@@ -354,10 +351,15 @@ def regenerate_sentence():
     current_word_data = session.get('current_word_data')
     if not word or not current_word_data or current_word_data['word'] != word:
         return jsonify({"success": False, "message": "Lỗi session hoặc từ không hợp lệ."}), 400
+    
     meaning = current_word_data['mean']
     sentence = generate_sentence_with_word_and_meaning(word, meaning)
-    hidden_sentence = cut_sentence_around_phrase(sentence, word, word) if sentence else "Không thể tạo câu."
-    return jsonify({"success": True, "new_sentence": hidden_sentence})
+    
+    if sentence:
+        hidden_sentence = cut_sentence_around_phrase(sentence, word, word)
+        return jsonify({"success": True, "new_sentence": hidden_sentence})
+    else:
+        return jsonify({"success": False, "message": "Không thể tạo lại câu. Vui lòng thử lại."})
     
 @app.route("/logout")
 def logout():
@@ -366,4 +368,7 @@ def logout():
     return redirect(url_for("index"))
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    if not supabase:
+        print("CRITICAL ERROR: Could not connect to Supabase. Check your environment variables.")
+    else:
+        app.run(debug=True)
