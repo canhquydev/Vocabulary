@@ -34,9 +34,15 @@
     }
     h3 {
       color: #555;
-      margin-top: 30px;
-      margin-bottom: 15px;
+      margin-top: 10px;
+      margin-bottom: 10px;
       font-size: 1.5em;
+    }
+    #question-counter {
+        font-size: 1.1em;
+        color: #6c757d;
+        margin-bottom: 15px;
+        font-weight: 500;
     }
     #sentence-display {
       background-color: #e9f2ff;
@@ -88,6 +94,12 @@
       align-items: center;
       justify-content: center;
       gap: 8px;
+    }
+    #review-button {
+        background-color: #28a745; /* Green color for review */
+    }
+    #review-button:hover:not(:disabled) {
+        background-color: #218838;
     }
     button:hover:not(:disabled) {
       background-color: #0056b3;
@@ -164,6 +176,7 @@
     <h2>Chào mừng {{ username }}!</h2>
 
     <h3>Câu hỏi:</h3>
+    <p id="question-counter">{{ question_info }}</p>
     <p id="sentence-display">{{ sentence }}</p>
 
     <form id="answer-form">
@@ -175,6 +188,7 @@
     <div class="button-group">
       <button id="skip-button">Bỏ qua</button>
       <button id="regenerate-button">Tạo lại câu</button>
+      <button id="review-button">Ôn tập lại</button>
     </div>
 
     <p id="feedback-message"></p>
@@ -186,158 +200,154 @@
 
   <script>
     document.addEventListener('DOMContentLoaded', function() {
-      const answerForm = document.getElementById('answer-form');
-      const userAnswerInput = document.getElementById('user-answer-input');
-      const correctWordInput = document.getElementById('correct-word-input');
-      const sentenceDisplay = document.getElementById('sentence-display');
-      const feedbackMessage = document.getElementById('feedback-message');
-      const skipRevealMessage = document.getElementById('skip-reveal-message');
-      const skipButton = document.getElementById('skip-button');
-      const regenerateButton = document.getElementById('regenerate-button');
-      const checkButton = document.getElementById('check-button');
-      const logoutLink = document.getElementById('logout-link');
+        const answerForm = document.getElementById('answer-form');
+        const userAnswerInput = document.getElementById('user-answer-input');
+        const correctWordInput = document.getElementById('correct-word-input');
+        const sentenceDisplay = document.getElementById('sentence-display');
+        const feedbackMessage = document.getElementById('feedback-message');
+        const skipRevealMessage = document.getElementById('skip-reveal-message');
+        const questionCounter = document.getElementById('question-counter');
 
-      function showLoading(button, text) {
-        button.disabled = true;
-        button.innerHTML = `<span class="loading-spinner"></span> ${text}...`;
-      }
+        const skipButton = document.getElementById('skip-button');
+        const regenerateButton = document.getElementById('regenerate-button');
+        const reviewButton = document.getElementById('review-button');
+        const checkButton = document.getElementById('check-button');
+        const allButtons = [skipButton, regenerateButton, reviewButton, checkButton];
 
-      function hideLoading(button, originalText) {
-        button.disabled = false;
-        button.innerHTML = originalText;
-      }
+        function showLoading(button, text) {
+            button.disabled = true;
+            button.innerHTML = `<span class="loading-spinner"></span> ${text}...`;
+        }
 
-      // Hàm để tải từ và câu mới
-      async function fetchNewWord() {
-        showLoading(skipButton, 'Đang tải'); // Show loading on skip button
-        try {
-          const response = await fetch('/skip_word', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-Requested-With': 'XMLHttpRequest'
+        function hideLoading(button, originalText) {
+            button.disabled = false;
+            button.innerHTML = originalText;
+        }
+
+        function setButtonsState(disabled) {
+            allButtons.forEach(btn => btn.disabled = disabled);
+            userAnswerInput.disabled = disabled;
+        }
+
+        function updateUI(data) {
+            if (data.completed) {
+                sentenceDisplay.textContent = "🎉 Chúc mừng! Bạn đã hoàn thành tất cả các câu hỏi.";
+                questionCounter.textContent = "Hoàn thành!";
+                setButtonsState(true); // Disable all buttons except review
+                reviewButton.disabled = false;
+                userAnswerInput.value = '';
+                correctWordInput.value = '';
+            } else {
+                sentenceDisplay.textContent = data.sentence;
+                correctWordInput.value = data.correct_word;
+                questionCounter.textContent = `Câu ${data.question_number}/${data.total_questions}`;
+                userAnswerInput.value = '';
+                feedbackMessage.textContent = '';
+                skipRevealMessage.textContent = '';
+                setButtonsState(false);
             }
-          });
-
-          const data = await response.json();
-
-          if (data.success) {
-            sentenceDisplay.textContent = data.new_sentence;
-            correctWordInput.value = data.new_correct_word;
-            userAnswerInput.value = ''; // Xóa trường nhập liệu
-            feedbackMessage.textContent = ''; // Xóa thông báo phản hồi
-            skipRevealMessage.textContent = ''; // Xóa thông báo bỏ qua
-          } else {
-            feedbackMessage.textContent = data.message;
-            feedbackMessage.className = 'message-danger';
-          }
-        } catch (error) {
-          console.error('Error fetching new word:', error);
-          feedbackMessage.textContent = 'Lỗi khi tải từ mới.';
-          feedbackMessage.className = 'message-danger';
-        } finally {
-          hideLoading(skipButton, 'Bỏ qua'); // Hide loading on skip button
         }
-      }
 
-      answerForm.addEventListener('submit', async function(event) {
-        event.preventDefault();
-        // Removed showLoading(checkButton, 'Đang kiểm tra');
-
-        const userAnswer = userAnswerInput.value;
-        const correctWord = correctWordInput.value;
-
-        feedbackMessage.textContent = '';
-        skipRevealMessage.textContent = '';
-
-        try {
-          const response = await fetch('/check_answer', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-Requested-With': 'XMLHttpRequest'
-            },
-            body: JSON.stringify({ answer: userAnswer, correct_word: correctWord })
-          });
-
-          const data = await response.json();
-
-          if (data.success) {
-            feedbackMessage.textContent = `✅ Chính xác! ${data.word} - ${data.meaning}`;
-            feedbackMessage.className = 'message-success';
-            setTimeout(() => {
-              fetchNewWord();
-              // Removed hideLoading(checkButton, 'Kiểm tra');
-            }, 1500);
-          } else {
-            feedbackMessage.textContent = data.message;
-            feedbackMessage.className = 'message-danger';
-            // Removed hideLoading(checkButton, 'Kiểm tra');
-          }
-        } catch (error) {
-          console.error('Error checking answer:', error);
-          feedbackMessage.textContent = 'Lỗi khi kiểm tra đáp án.';
-          feedbackMessage.className = 'message-danger';
-          // Removed hideLoading(checkButton, 'Kiểm tra');
+        async function fetchNextWord() {
+            showLoading(skipButton, 'Đang tải');
+            try {
+                const response = await fetch('/next_word', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const data = await response.json();
+                updateUI(data);
+            } catch (error) {
+                console.error('Error fetching next word:', error);
+                feedbackMessage.textContent = 'Lỗi khi tải từ mới.';
+            } finally {
+                hideLoading(skipButton, 'Bỏ qua');
+            }
         }
-      });
 
-      skipButton.addEventListener('click', async function() {
-        feedbackMessage.textContent = '';
-        skipRevealMessage.textContent = '';
+        answerForm.addEventListener('submit', async function(event) {
+            event.preventDefault();
+            showLoading(checkButton, 'Kiểm tra');
 
-        const currentWord = correctWordInput.value;
-        skipRevealMessage.textContent = `Đáp án của câu trước là: ${currentWord}`;
-        skipRevealMessage.className = 'message-info';
+            const userAnswer = userAnswerInput.value;
+            const correctWord = correctWordInput.value;
 
-        await fetchNewWord();
-      });
+            try {
+                const response = await fetch('/check_answer', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ answer: userAnswer, correct_word: correctWord })
+                });
+                const data = await response.json();
 
-      regenerateButton.addEventListener('click', async function() {
-        feedbackMessage.textContent = '';
-        skipRevealMessage.textContent = '';
-        showLoading(regenerateButton, 'Đang tạo'); // Show loading on regenerate button
+                if (data.success) {
+                    feedbackMessage.textContent = `✅ Chính xác! ${data.word} - ${data.meaning}`;
+                    feedbackMessage.className = 'message-success';
+                    setButtonsState(true); // Disable buttons while waiting for next word
+                    setTimeout(() => {
+                        fetchNextWord();
+                    }, 1500);
+                } else {
+                    feedbackMessage.textContent = data.message;
+                    feedbackMessage.className = 'message-danger';
+                }
+            } catch (error) {
+                console.error('Error checking answer:', error);
+                feedbackMessage.textContent = 'Lỗi khi kiểm tra đáp án.';
+            } finally {
+                hideLoading(checkButton, 'Kiểm tra');
+            }
+        });
 
-        const currentWord = correctWordInput.value;
+        skipButton.addEventListener('click', async function() {
+            const currentWord = correctWordInput.value;
+            if(currentWord) {
+                skipRevealMessage.textContent = `Đáp án câu trước là: ${currentWord}`;
+                skipRevealMessage.className = 'message-info';
+            }
+            await fetchNextWord();
+        });
 
-        try {
-          const response = await fetch('/regenerate_sentence', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-Requested-With': 'XMLHttpRequest'
-            },
-            body: JSON.stringify({ word: currentWord })
-          });
+        regenerateButton.addEventListener('click', async function() {
+            showLoading(regenerateButton, 'Đang tạo');
+            const currentWord = correctWordInput.value;
+            try {
+                const response = await fetch('/regenerate_sentence', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ word: currentWord })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    sentenceDisplay.textContent = data.new_sentence;
+                } else {
+                    feedbackMessage.textContent = data.message;
+                    feedbackMessage.className = 'message-danger';
+                }
+            } catch (error) {
+                console.error('Error regenerating sentence:', error);
+                feedbackMessage.textContent = 'Lỗi khi tạo lại câu.';
+            } finally {
+                hideLoading(regenerateButton, 'Tạo lại câu');
+            }
+        });
 
-          const data = await response.json();
-
-          if (data.success) {
-            sentenceDisplay.textContent = data.new_sentence;
-            userAnswerInput.value = '';
-          } else {
-            feedbackMessage.textContent = data.message;
-            feedbackMessage.className = 'message-danger';
-          }
-        } catch (error) {
-          console.error('Error regenerating sentence:', error);
-          feedbackMessage.textContent = 'Lỗi khi tạo lại câu.';
-          feedbackMessage.className = 'message-danger';
-        } finally {
-          hideLoading(regenerateButton, 'Tạo lại câu'); // Hide loading on regenerate button
-        }
-      });
-
-      logoutLink.addEventListener('click', function(event) {
-        // Simple loading for logout, as it navigates away.
-        event.preventDefault();
-        const originalText = logoutLink.textContent;
-        logoutLink.textContent = 'Đang đăng xuất...';
-        logoutLink.style.pointerEvents = 'none'; // Disable clicks
-        logoutLink.style.opacity = '0.7';
-
-        window.location.href = logoutLink.href; // Proceed with logout
-      });
+        reviewButton.addEventListener('click', async function() {
+            showLoading(reviewButton, 'Bắt đầu');
+            try {
+                const response = await fetch('/review', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const data = await response.json();
+                updateUI(data);
+            } catch (error) {
+                console.error('Error starting review:', error);
+                feedbackMessage.textContent = 'Lỗi khi bắt đầu ôn tập.';
+            } finally {
+                hideLoading(reviewButton, 'Ôn tập lại');
+            }
+        });
     });
   </script>
 </body>

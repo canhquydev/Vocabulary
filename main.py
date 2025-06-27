@@ -100,38 +100,6 @@ def get_db_connection():
         print(f"Error connecting to Neon database: {e}")
         # Xử lý lỗi kết nối, có thể raise exception hoặc trả về None
         raise
-    # if neon_conn_string:
-    #     try:
-    #         conn = psycopg2.connect(neon_conn_string)
-    #         return conn
-    #     except Exception as e:
-    #         print(f"Error connecting to Neon database: {e}")
-    #         # Xử lý lỗi kết nối, có thể raise exception hoặc trả về None
-    #         raise
-    # else:
-    #     # Fallback cho phát triển cục bộ với SQL Server nếu biến môi trường không tồn tại
-    #     # Đảm bảo bạn đã cài đặt pyodbc và driver cho SQL Server
-    #     try:
-    #         conn = pyodbc.connect(
-    #             'DRIVER={ODBC Driver 17 for SQL Server};'
-    #             'SERVER=0D75D1721846358\\SQLEXPRESS;'
-    #             'DATABASE=QL;'
-    #             'UID=sa;'
-    #             'PWD=123456789'
-    #         )
-    #         return conn
-    #     except Exception as e:
-    #         print(f"Error connecting to local SQL Server: {e}")
-    #         raise
-# def get_db_connection():
-#     conn = pyodbc.connect(
-#         'DRIVER={ODBC Driver 17 for SQL Server};'
-#         'SERVER=0D75D1721846358\\SQLEXPRESS;'
-#         'DATABASE=QL;'
-#         'UID=sa;'
-#         'PWD=123456789'
-#     )
-#     return conn
 
 @app.route("/")
 def index():
@@ -184,38 +152,64 @@ def register():
         return render_template("login.html")
     return render_template("register.html")
 
-@app.route("/home", methods=["GET"])
-def home():
-    if "username" not in session:
-        return redirect("/login")
+def get_next_word_data():
+    """Lấy dữ liệu cho từ tiếp theo trong session."""
+    available_words = session.get('available_words', [])
+    if not available_words:
+        return {"completed": True}
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT word, mean FROM vocabulary")
-    # Always load words from the database on initial home load or refresh
-    session['available_words'] = [{'word': r[0], 'mean': r[1]} for r in cursor.fetchall()]
-    conn.close()
-    random.shuffle(session['available_words']) # Shuffle for random order
-    session.modified = True # Mark session as modified after updating the list
+    selected_word_data = available_words.pop(0)
+    session['current_word_data'] = selected_word_data
+    session.modified = True
 
-    if not session['available_words']:
-        return render_template("home.html", username=session["username"], sentence="Không có từ vựng nào.", correct_word="")
-
-    # Pop a word from the list
-    selected_word_data = session['available_words'].pop(0) # Pop from the beginning
     word = selected_word_data['word']
     meaning = selected_word_data['mean']
-
-    session.modified = True # Mark session as modified after popping
-
     sentence = generate_sentence_with_word_and_meaning(word, meaning)
+
     if sentence:
         hidden_sentence = cut_sentence_around_phrase(sentence, word, word)
     else:
         hidden_sentence = "Không thể tạo câu."
 
-    return render_template("home.html", username=session["username"],
-                           sentence=hidden_sentence, correct_word=word)
+    return {
+        "completed": False,
+        "sentence": hidden_sentence,
+        "correct_word": word,
+        "question_number": session.get('total_words', 0) - len(available_words),
+        "total_questions": session.get('total_words', 0)
+    }
+
+def load_and_shuffle_vocabulary():
+    """Tải từ vựng từ DB, xáo trộn và lưu vào session."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT word, mean FROM vocabulary")
+    all_words = [{'word': r[0], 'mean': r[1]} for r in cursor.fetchall()]
+    conn.close()
+    random.shuffle(all_words)
+    session['available_words'] = all_words
+    session['total_words'] = len(all_words)
+    session.modified = True
+
+
+@app.route("/home", methods=["GET"])
+def home():
+    if "username" not in session:
+        return redirect("/login")
+    
+    load_and_shuffle_vocabulary()
+    
+    if not session['available_words']:
+        return render_template("home.html", username=session["username"], sentence="Không có từ vựng nào.", correct_word="", question_info="0/0")
+
+    next_word_info = get_next_word_data()
+
+    return render_template("home.html", 
+                           username=session["username"],
+                           sentence=next_word_info["sentence"], 
+                           correct_word=next_word_info["correct_word"],
+                           question_info=f"{next_word_info['question_number']}/{next_word_info['total_questions']}")
+
 
 @app.route("/check_answer", methods=["POST"])
 def check_answer():
@@ -226,15 +220,38 @@ def check_answer():
     correct_word = request.json.get("correct_word", "").strip().lower()
 
     if user_input == correct_word:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT mean FROM vocabulary WHERE word = %s", (correct_word,))
-        result = cursor.fetchone()
-        conn.close()
-        meaning = result[0] if result else "Không tìm thấy nghĩa" # Giả sử 'mean' là cột đầu tiên hoặc duy nhất được chọn
-        return jsonify({"success": True, "message": "✅ Chính xác!", "word": correct_word, "meaning": meaning})
+        current_word_data = session.get('current_word_data')
+        if not current_word_data:
+            return jsonify({"success": False, "message": "Lỗi session."})
+
+        meaning = current_word_data.get('mean', 'Không tìm thấy nghĩa')
+        return jsonify({
+            "success": True, 
+            "message": "✅ Chính xác!", 
+            "word": correct_word, 
+            "meaning": meaning
+        })
     else:
         return jsonify({"success": False, "message": "❌ Sai rồi!"})
+
+@app.route("/next_word", methods=["POST"])
+def next_word():
+    if "username" not in session:
+        return jsonify({"success": False, "message": "Unauthorized"}), 401
+    
+    next_word_info = get_next_word_data()
+    return jsonify(next_word_info)
+
+
+@app.route("/review", methods=["POST"])
+def review():
+    if "username" not in session:
+        return jsonify({"success": False, "message": "Unauthorized"}), 401
+    
+    load_and_shuffle_vocabulary()
+    next_word_info = get_next_word_data()
+    return jsonify(next_word_info)
+
 
 @app.route("/skip_word", methods=["POST"])
 def skip_word():
@@ -242,36 +259,10 @@ def skip_word():
         return jsonify({"success": False, "message": "Unauthorized"}), 401
 
     if not session.get('available_words'):
-        # If the list is empty, re-populate it for the next round (simulates starting over)
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT word, mean FROM vocabulary")
-        session['available_words'] = [{'word': r[0], 'mean': r[1]} for r in cursor.fetchall()]
-        conn.close()
-        random.shuffle(session['available_words'])
-        session.modified = True # Mark session as modified
+        return jsonify({"completed": True, "message": "Bạn đã hoàn thành tất cả các câu hỏi!"})
 
-        if not session['available_words']:
-            return jsonify({"success": False, "message": "Không có từ vựng nào để tải."})
-
-    # Pop a new word from the list
-    selected_word_data = session['available_words'].pop(0) # Pop from the beginning
-    word = selected_word_data['word']
-    meaning = selected_word_data['mean']
-
-    session.modified = True # Mark session as modified
-
-    sentence = generate_sentence_with_word_and_meaning(word, meaning)
-    if sentence:
-        hidden_sentence = cut_sentence_around_phrase(sentence, word, word)
-    else:
-        hidden_sentence = "Không thể tạo câu."
-
-    return jsonify({
-        "success": True,
-        "new_sentence": hidden_sentence,
-        "new_correct_word": word
-    })
+    next_word_info = get_next_word_data()
+    return jsonify(next_word_info)
 
 @app.route("/regenerate_sentence", methods=["POST"])
 def regenerate_sentence():
@@ -282,16 +273,11 @@ def regenerate_sentence():
     if not word:
         return jsonify({"success": False, "message": "Word not provided."}), 400
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT mean FROM vocabulary WHERE word = %s", (word,))
-    result = cursor.fetchone()
-    conn.close()
+    current_word_data = session.get('current_word_data')
+    if not current_word_data or current_word_data['word'] != word:
+        return jsonify({"success": False, "message": "Lỗi session hoặc từ không hợp lệ."}), 400
 
-    if not result:
-        return jsonify({"success": False, "message": f"Không tìm thấy nghĩa cho từ '{word}'."}), 404
-
-    meaning = result[0]
+    meaning = current_word_data['mean']
     sentence = generate_sentence_with_word_and_meaning(word, meaning)
     if sentence:
         hidden_sentence = cut_sentence_around_phrase(sentence, word, word)
