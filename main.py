@@ -193,7 +193,7 @@ def home():
     cursor = conn.cursor()
     cursor.execute("SELECT word, mean FROM vocabulary")
     # Always load words from the database on initial home load or refresh
-    session['available_words'] = [{'word': r.word, 'mean': r.mean} for r in cursor.fetchall()]
+    session['available_words'] = [{'word': r[0], 'mean': r[1]} for r in cursor.fetchall()]
     conn.close()
     random.shuffle(session['available_words']) # Shuffle for random order
     session.modified = True # Mark session as modified after updating the list
@@ -231,7 +231,7 @@ def check_answer():
         cursor.execute("SELECT mean FROM vocabulary WHERE word = %s", (correct_word,))
         result = cursor.fetchone()
         conn.close()
-        meaning = result.mean if result else "Không tìm thấy nghĩa"
+        meaning = result[0] if result else "Không tìm thấy nghĩa" # Giả sử 'mean' là cột đầu tiên hoặc duy nhất được chọn
         return jsonify({"success": True, "message": "✅ Chính xác!", "word": correct_word, "meaning": meaning})
     else:
         return jsonify({"success": False, "message": "❌ Sai rồi!"})
