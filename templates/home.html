@@ -1,7 +1,9 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <link rel="icon" type="image/x-icon" href="/templates/icon.png">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='icon.png') }}">
   <title>Trang chủ</title>
   <style>
     body {
@@ -223,7 +225,7 @@
         {% endif %}
     </div>
     <br>
-    <a href="/logout" id="logout-link" style="background-color: #6c757d; border-color: #6c757d;">Đăng xuất</a>
+    <a href="/logout" id="logout-link" style="background-color: #6c757d; border-color: #6c757d; color: white;">Đăng xuất</a>
   </div>
 
   <script>
