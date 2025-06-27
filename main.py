@@ -13,51 +13,55 @@ app.secret_key = 'quy_secret_key'
 API_CONFIGS = [
     {
         "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=GEMINI_API_KEY",
+        # Dán khóa API thứ nhất của bạn vào đây
         "key": "AIzaSyB6oo4MOqTTq07tLpWozpZ2NoKo45vLc14"
     },
     {
         "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=GEMINI_API_KEY",
+        # Dán khóa API thứ hai của bạn vào đây
         "key": "AIzaSyCTHUesZlrg23UFTTVpDEGe54gSpHdZ9KU"
     }
+    # Bạn có thể thêm nhiều khóa khác vào đây
 ]
 
 def generate_sentence_with_word_and_meaning(word, meaning):
+    # Vòng lặp sẽ thử từng cấu hình API trong danh sách
     for config in API_CONFIGS:
-        headers = {
-            "Content-Type": "application/json"
-        }
-        data = {
-            "contents": [
-                {
-                    "parts": [
-                        {
-                            "text": f"Create a 15-20 word IT-related sentence using '{word}' which means '{meaning}'. "
-                                    f"The sentence should be professional, use diverse structures, and not repeat previous forms."
-                        }
-                    ]
-                }
-            ]
-        }
+        # 1. SỬA LỖI QUAN TRỌNG: Thay thế placeholder bằng khóa API thật
+        final_url = config['url'].replace('GEMINI_API_KEY', config['key'])
+        
+        # Lấy 10 ký tự đầu của khóa để tiện theo dõi
+        key_identifier = config['key'][:10]
+
+        headers = {"Content-Type": "application/json"}
+        data = {"contents": [{"parts": [{"text": f"Create a natural English sentence for IT context, 15-20 words, using the word '{word}' which means '{meaning}'."}]}]}
+
+        print(f"🔄 Đang thử với khóa API: {key_identifier}...")
 
         try:
-            response = requests.post(
-                f"{config['url']}?key={config['key']}",
-                headers=headers,
-                data=json.dumps(data)
-            )
+            response = requests.post(final_url, headers=headers, data=json.dumps(data))
 
+            # Nếu gọi API thành công
             if response.status_code == 200:
+                print(f"✅ Thành công với khóa {key_identifier}!")
                 response_data = response.json()
-                return response_data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
+                generated_text = response_data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
+                return generated_text.replace('**', '')
 
+            # 2. XỬ LÝ LỖI: Nếu bị giới hạn (rate limit)
             elif response.status_code == 429:
-                print(f"⚠️ Quá giới hạn với key {config['key']}, thử key khác...")
+                print(f"⚠️ Khóa {key_identifier} đã bị giới hạn. Chuyển sang khóa tiếp theo.")
+                continue  # Bỏ qua và thử khóa tiếp theo trong vòng lặp
+
+            # Xử lý các lỗi khác (ví dụ: khóa API sai)
+            else:
+                print(f"❌ Lỗi với khóa {key_identifier} (Mã lỗi: {response.status_code}). Chuyển sang khóa tiếp theo.")
+                print("   Chi tiết:", response.text)
                 continue
 
-        except Exception as e:
-            print(f"Lỗi gọi API với key {config['key']}: {e}")
+        except requests.RequestException as e:
+            print(f"❌ Lỗi kết nối mạng với khóa {key_identifier}: {e}")
             continue
-
     return None
 
 def hidden_format(text):
