@@ -146,7 +146,7 @@ def login():
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        query = "SELECT * FROM Account WHERE Username = ? AND Password = ?"
+        query = "SELECT * FROM Account WHERE Username = %s AND Password = %s"
         cursor.execute(query, (username, password))
         user = cursor.fetchone()
 
@@ -173,11 +173,11 @@ def register():
         active = 0
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM ACCOUNT WHERE Username = ?", (username,))
+        cursor.execute("SELECT * FROM ACCOUNT WHERE Username = %s", (username,))
         if cursor.fetchone():
             conn.close()
             return "❌ Tên đăng nhập đã tồn tại!"
-        query = "INSERT INTO ACCOUNT VALUES(?, ?, ?, ?)"
+        query = "INSERT INTO ACCOUNT VALUES(%s, %s, %s, %s)"
         cursor.execute(query, (username, password, roles, active))
         conn.commit()
         conn.close()
@@ -228,7 +228,7 @@ def check_answer():
     if user_input == correct_word:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT mean FROM vocabulary WHERE word = ?", (correct_word,))
+        cursor.execute("SELECT mean FROM vocabulary WHERE word = %s", (correct_word,))
         result = cursor.fetchone()
         conn.close()
         meaning = result.mean if result else "Không tìm thấy nghĩa"
@@ -284,7 +284,7 @@ def regenerate_sentence():
 
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT mean FROM vocabulary WHERE word = ?", (word,))
+    cursor.execute("SELECT mean FROM vocabulary WHERE word = %s", (word,))
     result = cursor.fetchone()
     conn.close()
 
