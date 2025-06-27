@@ -37,13 +37,13 @@
                     <tbody>
                         {% for account in inactive_accounts %}
                         <tr>
-                            <td>{{ account[1] }}</td>
-                            <td>{{ account[2] }}</td>
+                            <td>{{ account.username }}</td>
+                            <td>{{ account.roles }}</td>
                             <td>
-                                <form action="{{ url_for('activate_account', account_id=account[0]) }}" method="POST" class="d-inline">
+                                <form action="{{ url_for('activate_account', account_id=account.id) }}" method="POST" class="d-inline">
                                     <button type="submit" class="btn btn-success btn-sm">Kích hoạt</button>
                                 </form>
-                                <form action="{{ url_for('delete_account', account_id=account[0]) }}" method="POST" class="d-inline">
+                                <form action="{{ url_for('delete_account', account_id=account.id) }}" method="POST" class="d-inline">
                                     <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Bạn có chắc chắn muốn xóa tài khoản này không?');">Xóa</button>
                                 </form>
                             </td>
@@ -74,10 +74,10 @@
                     <tbody>
                         {% for account in active_accounts %}
                         <tr>
-                            <td>{{ account[1] }}</td>
-                            <td>{{ account[2] }}</td>
+                            <td>{{ account.username }}</td>
+                            <td>{{ account.roles }}</td>
                             <td>
-                                <form action="{{ url_for('delete_account', account_id=account[0]) }}" method="POST" class="d-inline">
+                                <form action="{{ url_for('delete_account', account_id=account.id) }}" method="POST" class="d-inline">
                                     <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Bạn có chắc chắn muốn xóa tài khoản này không?');">Xóa</button>
                                 </form>
                             </td>
