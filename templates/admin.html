@@ -1,4 +1,4 @@
-    <!DOCTYPE html>
+<!DOCTYPE html>
 <html>
 <head>
     <title>Admin - Thêm từ vựng</title>
@@ -6,6 +6,7 @@
     <style>
         body { background-color: #f8f9fa; }
         .container { max-width: 600px; margin-top: 50px; }
+        .action-buttons { margin-top: 15px; }
     </style>
 </head>
 <body>
@@ -32,7 +33,10 @@
                         <small class="form-text text-muted">Hệ thống sẽ tự động tách từ và nghĩa dựa trên dấu "-".</small>
                     </div>
                     <button type="submit" class="btn btn-primary">Thêm từ</button>
-                    <a href="{{ url_for('home') }}" class="btn btn-secondary">Quay lại trang chủ</a>
+                    <div class="action-buttons">
+                        <a href="{{ url_for('manage_vocabulary') }}" class="btn btn-info">Quản lý từ vựng</a>
+                        <a href="{{ url_for('home') }}" class="btn btn-secondary">Quay lại trang chủ</a>
+                    </div>
                 </form>
             </div>
         </div>

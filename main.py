@@ -9,56 +9,39 @@ from functools import wraps
 app = Flask(__name__)
 app.secret_key = 'quy_secret_key'
 
-# --- Các hàm và cấu hình API giữ nguyên ---
+# --- API Cấu hình (Không thay đổi) ---
 API_CONFIGS = [
     {
         "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=GEMINI_API_KEY",
-        # Dán khóa API thứ nhất của bạn vào đây
-        "key": "AIzaSyB6oo4MOqTTq07tLpWozpZ2NoKo45vLc14"
+        "key": "AIzaSyB6oo4MOqTTq07tLpWozpZ2NoKo45vLc14" 
     },
     {
         "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=GEMINI_API_KEY",
-        # Dán khóa API thứ hai của bạn vào đây
         "key": "AIzaSyCTHUesZlrg23UFTTVpDEGe54gSpHdZ9KU"
     }
-    # Bạn có thể thêm nhiều khóa khác vào đây
 ]
 
+# --- Các hàm phụ trợ (Không thay đổi) ---
 def generate_sentence_with_word_and_meaning(word, meaning):
-    # Vòng lặp sẽ thử từng cấu hình API trong danh sách
     for config in API_CONFIGS:
-        # 1. SỬA LỖI QUAN TRỌNG: Thay thế placeholder bằng khóa API thật
         final_url = config['url'].replace('GEMINI_API_KEY', config['key'])
-        
-        # Lấy 10 ký tự đầu của khóa để tiện theo dõi
         key_identifier = config['key'][:10]
-
         headers = {"Content-Type": "application/json"}
         data = {"contents": [{"parts": [{"text": f"Create a natural English sentence for IT context, 15-20 words, using the word '{word}' which means '{meaning}'."}]}]}
-
         print(f"🔄 Đang thử với khóa API: {key_identifier}...")
-
         try:
             response = requests.post(final_url, headers=headers, data=json.dumps(data))
-
-            # Nếu gọi API thành công
             if response.status_code == 200:
                 print(f"✅ Thành công với khóa {key_identifier}!")
                 response_data = response.json()
                 generated_text = response_data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
                 return generated_text.replace('**', '')
-
-            # 2. XỬ LÝ LỖI: Nếu bị giới hạn (rate limit)
             elif response.status_code == 429:
                 print(f"⚠️ Khóa {key_identifier} đã bị giới hạn. Chuyển sang khóa tiếp theo.")
-                continue  # Bỏ qua và thử khóa tiếp theo trong vòng lặp
-
-            # Xử lý các lỗi khác (ví dụ: khóa API sai)
+                continue
             else:
                 print(f"❌ Lỗi với khóa {key_identifier} (Mã lỗi: {response.status_code}). Chuyển sang khóa tiếp theo.")
-                print("   Chi tiết:", response.text)
                 continue
-
         except requests.RequestException as e:
             print(f"❌ Lỗi kết nối mạng với khóa {key_identifier}: {e}")
             continue
@@ -67,34 +50,22 @@ def generate_sentence_with_word_and_meaning(word, meaning):
 def hidden_format(text):
     words = text.split()
     result = []
-
     for word in words:
         if len(word) > 0:
-            if len(word) == 1:
-                hidden_word = word
-            else:
-                hidden_word = word[0] + '_' + ' _' * (len(word) - 2)
+            hidden_word = word[0] + '_' + ' _' * (len(word) - 2) if len(word) > 1 else word
             result.append(hidden_word)
-
     return ' '.join(result)
 
 def cut_sentence_around_phrase(sentence, target_phrase, word):
     lower_sentence = sentence.lower()
     lower_target_phrase = target_phrase.lower()
-
     start_index = lower_sentence.find(lower_target_phrase)
-
-    if start_index == -1:
-        return None
-    
+    if start_index == -1: return None
     end_index = start_index + len(target_phrase)
-
     before_phrase = sentence[:start_index].strip()
     after_phrase = sentence[end_index:].strip()
-
     return before_phrase + " " + hidden_format(word) + " " + after_phrase
     
-# Cấu hình kết nối
 def get_db_connection():
     neon_conn_string = os.environ.get('DATABASE_URL')
     try:
@@ -104,7 +75,16 @@ def get_db_connection():
         print(f"Error connecting to Neon database: {e}")
         raise
 
-# Decorator để kiểm tra vai trò admin
+# --- Decorators ---
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if "user_id" not in session:
+            flash("Vui lòng đăng nhập để sử dụng chức năng này.", "warning")
+            return redirect(url_for("login"))
+        return f(*args, **kwargs)
+    return decorated_function
+
 def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -114,8 +94,7 @@ def admin_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-# --- Các route đã được cập nhật và thêm mới ---
-
+# --- Route xác thực & trang chủ ---
 @app.route("/")
 def index():
     return render_template("login.html")
@@ -125,27 +104,24 @@ def login():
     if request.method == "POST":
         username = request.form.get("username")
         password = request.form.get("password")
-
         conn = get_db_connection()
         cursor = conn.cursor()
-        query = "SELECT username, roles, active FROM Account WHERE Username = %s AND Password = %s"
+        query = "SELECT id, username, roles, active FROM Account WHERE Username = %s AND Password = %s"
         cursor.execute(query, (username, password))
         user = cursor.fetchone()
         conn.close()
-
         if user:
-            if user[2] == 0: # Kiểm tra active
+            if user[3] == 0:
                 flash("Tài khoản của bạn chưa được kích hoạt. Vui lòng liên hệ admin.", "danger")
                 return redirect(url_for("login"))
-            
-            session["username"] = user[0]
-            session["roles"] = user[1]
+            session["user_id"] = user[0]
+            session["username"] = user[1]
+            session["roles"] = user[2]
             session.pop('available_words', None)
             return redirect(url_for("home"))
         else:
             flash("Sai tài khoản hoặc mật khẩu.", "danger")
             return redirect(url_for("login"))
-            
     return render_template("login.html")
 
 @app.route("/register", methods=["POST", "GET"])
@@ -157,11 +133,7 @@ def register():
         if password != rpassword:
             flash("Mật khẩu không khớp.", "danger")
             return redirect(url_for("register"))
-        
-        # Mặc định role là user và active là 0
-        roles = "user" 
-        active = 0
-        
+        roles, active = "user", 0
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM ACCOUNT WHERE Username = %s", (username,))
@@ -169,30 +141,21 @@ def register():
             conn.close()
             flash("Tên đăng nhập đã tồn tại!", "danger")
             return redirect(url_for("register"))
-
         query = "INSERT INTO account (username, password, roles, active) VALUES (%s, %s, %s, %s)"
         cursor.execute(query, (username, password, roles, active))
         conn.commit()
         conn.close()
-
         flash("Đăng ký thành công! Vui lòng chờ admin kích hoạt tài khoản của bạn.", "success")
         return redirect(url_for("login"))
-        
     return render_template("register.html")
 
 @app.route("/home")
+@login_required
 def home():
-    if "username" not in session:
-        return redirect("/login")
-    
-    # Logic ôn tập từ vựng giữ nguyên
     load_and_shuffle_vocabulary()
-    
     if not session.get('available_words'):
-        return render_template("home.html", username=session["username"], sentence="Không có từ vựng nào.", correct_word="", question_info="0/0", roles=session.get("roles"))
-
+        return render_template("home.html", username=session["username"], sentence="Bạn chưa có từ vựng nào. Hãy thêm ở trang Quản lý từ vựng.", correct_word="", question_info="0/0", roles=session.get("roles"))
     next_word_info = get_next_word_data()
-
     return render_template("home.html", 
                            username=session["username"],
                            sentence=next_word_info.get("sentence"), 
@@ -200,48 +163,82 @@ def home():
                            question_info=f"{next_word_info.get('question_number', 0)}/{next_word_info.get('total_questions', 0)}",
                            roles=session.get("roles"))
 
-# --- Chức năng của Admin ---
-@app.route("/admin")
-@admin_required
-def admin_panel():
-    return render_template("admin.html", username=session.get("username"))
+# --- Chức năng quản lý từ vựng cho MỌI USER ---
+@app.route("/manage_vocabulary")
+@login_required
+def manage_vocabulary():
+    user_id = session.get("user_id")
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, word, mean FROM vocabulary WHERE user_id = %s ORDER BY id ASC", (user_id,))
+    all_vocab = cursor.fetchall()
+    conn.close()
+    return render_template("manage_vocabulary.html", all_vocab=all_vocab, username=session.get("username"))
 
 @app.route("/add_vocabulary", methods=["POST"])
-@admin_required
+@login_required
 def add_vocabulary():
     vocab_input = request.form.get("vocab_input")
     if not vocab_input or '-' not in vocab_input:
         flash("Định dạng không hợp lệ. Vui lòng nhập theo dạng 'Word - Mean'.", "danger")
-        return redirect(url_for("admin_panel"))
-
+        return redirect(url_for("manage_vocabulary"))
     parts = [p.strip() for p in vocab_input.split('-', 1)]
     if len(parts) != 2 or not parts[0] or not parts[1]:
         flash("Từ và nghĩa không được để trống.", "danger")
-        return redirect(url_for("admin_panel"))
-        
+        return redirect(url_for("manage_vocabulary"))
     word, mean = parts
-    
+    user_id = session.get("user_id")
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("INSERT INTO vocabulary (word, mean) VALUES (%s, %s)", (word, mean))
+        cursor.execute("INSERT INTO vocabulary (word, mean, user_id) VALUES (%s, %s, %s)", (word, mean, user_id))
         conn.commit()
         conn.close()
         flash(f"Đã thêm từ vựng '{word}' thành công!", "success")
     except Exception as e:
         flash(f"Lỗi khi thêm từ vựng: {e}", "danger")
+    return redirect(url_for("manage_vocabulary"))
 
-    return redirect(url_for("admin_panel"))
+@app.route("/delete_vocabulary/<int:vocab_id>", methods=["POST"])
+@login_required
+def delete_vocabulary(vocab_id):
+    user_id = session.get("user_id")
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        # Thêm user_id vào câu lệnh DELETE để đảm bảo user chỉ xóa được từ của mình
+        cursor.execute("DELETE FROM vocabulary WHERE id = %s AND user_id = %s", (vocab_id, user_id))
+        conn.commit()
+        conn.close()
+        flash("Đã xóa từ vựng thành công!", "success")
+    except Exception as e:
+        flash(f"Lỗi khi xóa từ vựng: {e}", "danger")
+    return redirect(url_for("manage_vocabulary"))
 
+@app.route("/delete_all_vocabulary", methods=["POST"])
+@login_required
+def delete_all_vocabulary():
+    user_id = session.get("user_id")
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        # Thay TRUNCATE bằng DELETE có điều kiện
+        cursor.execute("DELETE FROM vocabulary WHERE user_id = %s", (user_id,))
+        conn.commit()
+        conn.close()
+        flash("Đã xóa toàn bộ từ vựng của bạn thành công!", "success")
+    except Exception as e:
+        flash(f"Lỗi khi xóa từ vựng: {e}", "danger")
+    return redirect(url_for("manage_vocabulary"))
+
+# --- Chức năng của Admin (Chỉ quản lý tài khoản) ---
 @app.route("/manage_accounts")
 @admin_required
 def manage_accounts():
     conn = get_db_connection()
     cursor = conn.cursor()
-    # Lấy danh sách tài khoản chưa kích hoạt
     cursor.execute("SELECT id, username, roles FROM account WHERE active = 0")
     inactive_accounts = cursor.fetchall()
-    # Lấy danh sách tài khoản đã kích hoạt (trừ admin)
     cursor.execute("SELECT id, username, roles FROM account WHERE active = 1 AND roles != 'admin'")
     active_accounts = cursor.fetchall()
     conn.close()
@@ -275,12 +272,13 @@ def delete_account(account_id):
         flash(f"Lỗi khi xóa tài khoản: {e}", "danger")
     return redirect(url_for("manage_accounts"))
 
-# --- Các hàm và route còn lại giữ nguyên ---
+# --- API cho chức năng học từ vựng ---
 def load_and_shuffle_vocabulary():
-    """Tải từ vựng từ DB, xáo trộn và lưu vào session."""
+    if 'user_id' not in session: return
+    user_id = session.get("user_id")
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT word, mean FROM vocabulary")
+    cursor.execute("SELECT word, mean FROM vocabulary WHERE user_id = %s", (user_id,))
     all_words = [{'word': r[0], 'mean': r[1]} for r in cursor.fetchall()]
     conn.close()
     random.shuffle(all_words)
@@ -289,112 +287,59 @@ def load_and_shuffle_vocabulary():
     session.modified = True
     
 def get_next_word_data():
-    """Lấy dữ liệu cho từ tiếp theo trong session."""
     available_words = session.get('available_words', [])
-    if not available_words:
-        return {"completed": True}
-
+    if not available_words: return {"completed": True}
     selected_word_data = available_words.pop(0)
     session['current_word_data'] = selected_word_data
     session.modified = True
-
     word = selected_word_data['word']
     meaning = selected_word_data['mean']
     sentence = generate_sentence_with_word_and_meaning(word, meaning)
-
-    if sentence:
-        hidden_sentence = cut_sentence_around_phrase(sentence, word, word)
-    else:
-        hidden_sentence = "Không thể tạo câu."
-
+    hidden_sentence = cut_sentence_around_phrase(sentence, word, word) if sentence else "Không thể tạo câu."
     return {
-        "completed": False,
-        "sentence": hidden_sentence,
-        "correct_word": word,
+        "completed": False, "sentence": hidden_sentence, "correct_word": word,
         "question_number": session.get('total_words', 0) - len(available_words),
         "total_questions": session.get('total_words', 0)
     }
 
 @app.route("/check_answer", methods=["POST"])
+@login_required
 def check_answer():
-    if "username" not in session:
-        return jsonify({"success": False, "message": "Unauthorized"}), 401
-
     user_input = request.json.get("answer", "").strip().lower()
     correct_word = request.json.get("correct_word", "").strip().lower()
-
     if user_input == correct_word:
-        current_word_data = session.get('current_word_data')
-        if not current_word_data:
-            return jsonify({"success": False, "message": "Lỗi session."})
-
-        meaning = current_word_data.get('mean', 'Không tìm thấy nghĩa')
-        return jsonify({
-            "success": True, 
-            "message": "✅ Chính xác!", 
-            "word": correct_word, 
-            "meaning": meaning
-        })
+        current_word_data = session.get('current_word_data', {})
+        return jsonify({"success": True, "message": "✅ Chính xác!", "word": correct_word, "meaning": current_word_data.get('mean', '')})
     else:
         return jsonify({"success": False, "message": "❌ Sai rồi!"})
 
 @app.route("/next_word", methods=["POST"])
+@login_required
 def next_word():
-    if "username" not in session:
-        return jsonify({"success": False, "message": "Unauthorized"}), 401
-    
-    next_word_info = get_next_word_data()
-    return jsonify(next_word_info)
+    return jsonify(get_next_word_data())
 
 @app.route("/review", methods=["POST"])
+@login_required
 def review():
-    if "username" not in session:
-        return jsonify({"success": False, "message": "Unauthorized"}), 401
-    
     load_and_shuffle_vocabulary()
-    next_word_info = get_next_word_data()
-    return jsonify(next_word_info)
-
-
-@app.route("/skip_word", methods=["POST"])
-def skip_word():
-    if "username" not in session:
-        return jsonify({"success": False, "message": "Unauthorized"}), 401
-
-    if not session.get('available_words'):
-        return jsonify({"completed": True, "message": "Bạn đã hoàn thành tất cả các câu hỏi!"})
-
-    next_word_info = get_next_word_data()
-    return jsonify(next_word_info)
+    return jsonify(get_next_word_data())
 
 @app.route("/regenerate_sentence", methods=["POST"])
+@login_required
 def regenerate_sentence():
-    if "username" not in session:
-        return jsonify({"success": False, "message": "Unauthorized"}), 401
-
     word = request.json.get("word")
-    if not word:
-        return jsonify({"success": False, "message": "Word not provided."}), 400
-
     current_word_data = session.get('current_word_data')
-    if not current_word_data or current_word_data['word'] != word:
+    if not word or not current_word_data or current_word_data['word'] != word:
         return jsonify({"success": False, "message": "Lỗi session hoặc từ không hợp lệ."}), 400
-
     meaning = current_word_data['mean']
     sentence = generate_sentence_with_word_and_meaning(word, meaning)
-    if sentence:
-        hidden_sentence = cut_sentence_around_phrase(sentence, word, word)
-    else:
-        hidden_sentence = "Không thể tạo câu."
-
-    return jsonify({
-        "success": True,
-        "new_sentence": hidden_sentence
-    })
+    hidden_sentence = cut_sentence_around_phrase(sentence, word, word) if sentence else "Không thể tạo câu."
+    return jsonify({"success": True, "new_sentence": hidden_sentence})
     
 @app.route("/logout")
 def logout():
     session.clear()
+    flash("Bạn đã đăng xuất.", "info")
     return redirect(url_for("index"))
 
 if __name__ == "__main__":

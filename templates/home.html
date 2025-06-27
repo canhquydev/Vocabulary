@@ -3,6 +3,7 @@
 <head>
   <title>Trang chính</title>
   <style>
+    /* CSS không đổi, giữ nguyên như cũ */
     body {
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       background-color: #f0f2f5;
@@ -170,7 +171,7 @@
       background-color: #007bff;
       color: white;
     }
-    .admin-controls {
+    .controls-section {
       margin-top: 20px;
       border-top: 1px solid #eee;
       padding-top: 20px;
@@ -178,7 +179,7 @@
       justify-content: center;
       gap: 15px;
     }
-    .admin-controls a {
+    .controls-section a {
       background-color: #17a2b8;
       color: white;
       padding: 10px 20px;
@@ -186,7 +187,7 @@
       text-decoration: none;
       transition: background-color 0.3s;
     }
-    .admin-controls a:hover {
+    .controls-section a:hover {
       background-color: #138496;
     }
   </style>
@@ -214,17 +215,19 @@
 
     <p id="feedback-message"></p>
     <p id="skip-reveal-message"></p>
-    {% if roles == 'admin' %}
-    <div class="admin-controls">
-        <a href="{{ url_for('admin_panel') }}">Thêm từ vựng</a>
-        <a href="{{ url_for('manage_accounts') }}">Quản lý tài khoản</a>
+    
+    <div class="controls-section">
+        <a href="{{ url_for('manage_vocabulary') }}">Quản lý từ vựng</a>
+        {% if roles == 'admin' %}
+        <a href="{{ url_for('manage_accounts') }}" style="background-color: #ffc107; color: #212529;">Quản lý tài khoản</a>
+        {% endif %}
     </div>
-    {% endif %}
     <br>
-    <a href="/logout" id="logout-link">Đăng xuất</a>
+    <a href="/logout" id="logout-link" style="background-color: #6c757d; border-color: #6c757d;">Đăng xuất</a>
   </div>
 
   <script>
+    // Javascript không đổi, giữ nguyên như cũ
     document.addEventListener('DOMContentLoaded', function() {
         const answerForm = document.getElementById('answer-form');
         const userAnswerInput = document.getElementById('user-answer-input');
@@ -257,9 +260,10 @@
 
         function updateUI(data) {
             if (data.completed) {
-                sentenceDisplay.textContent = "🎉 Chúc mừng! Bạn đã hoàn thành tất cả các câu hỏi.";
+                const message = "🎉 Chúc mừng! Bạn đã hoàn thành tất cả các câu hỏi. Bấm 'Ôn tập lại' để bắt đầu lại.";
+                sentenceDisplay.textContent = message;
                 questionCounter.textContent = "Hoàn thành!";
-                setButtonsState(true); // Disable all buttons except review
+                setButtonsState(true); 
                 reviewButton.disabled = false;
                 userAnswerInput.value = '';
                 correctWordInput.value = '';
@@ -294,10 +298,8 @@
         answerForm.addEventListener('submit', async function(event) {
             event.preventDefault();
             showLoading(checkButton, 'Kiểm tra');
-
             const userAnswer = userAnswerInput.value;
             const correctWord = correctWordInput.value;
-
             try {
                 const response = await fetch('/check_answer', {
                     method: 'POST',
@@ -305,14 +307,11 @@
                     body: JSON.stringify({ answer: userAnswer, correct_word: correctWord })
                 });
                 const data = await response.json();
-
                 if (data.success) {
                     feedbackMessage.textContent = `✅ Chính xác! ${data.word} - ${data.meaning}`;
                     feedbackMessage.className = 'message-success';
-                    setButtonsState(true); // Disable buttons while waiting for next word
-                    setTimeout(() => {
-                        fetchNextWord();
-                    }, 1500);
+                    setButtonsState(true);
+                    setTimeout(() => { fetchNextWord(); }, 1500);
                 } else {
                     feedbackMessage.textContent = data.message;
                     feedbackMessage.className = 'message-danger';

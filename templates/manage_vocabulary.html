@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Quản lý từ vựng của bạn</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <style>
+        body { background-color: #f8f9fa; }
+        .container { max-width: 800px; margin-top: 50px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2 class="text-center mb-4">Quản lý từ vựng của, {{ username }}!</h2>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <div class="card mb-4">
+            <div class="card-header">
+                Thêm từ vựng mới
+            </div>
+            <div class="card-body">
+                <form action="{{ url_for('add_vocabulary') }}" method="POST">
+                    <div class="form-group">
+                        <label for="vocab_input">Nhập từ vựng</label>
+                        <input type="text" class="form-control" id="vocab_input" name="vocab_input" placeholder="Định dạng: Word - Mean" required>
+                        <small class="form-text text-muted">Hệ thống sẽ tự động tách từ và nghĩa dựa trên dấu "-".</small>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Thêm từ</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>Danh sách từ của bạn ({{ all_vocab|length }})</span>
+                {% if all_vocab %}
+                <form action="{{ url_for('delete_all_vocabulary') }}" method="POST" class="d-inline" onsubmit="return confirm('Bạn có chắc chắn muốn XÓA TOÀN BỘ từ vựng của mình không?');">
+                    <button type="submit" class="btn btn-danger btn-sm">Xóa tất cả</button>
+                </form>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th style="width: 35%;">Từ (Word)</th>
+                            <th style="width: 50%;">Nghĩa (Mean)</th>
+                            <th style="width: 15%;">Hành động</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for vocab in all_vocab %}
+                        <tr>
+                            <td>{{ vocab[1] }}</td>
+                            <td>{{ vocab[2] }}</td>
+                            <td>
+                                <form action="{{ url_for('delete_vocabulary', vocab_id=vocab[0]) }}" method="POST" class="d-inline">
+                                    <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Bạn có chắc muốn xóa từ `{{ vocab[1] }}` không?');">Xóa</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="3" class="text-center">Bạn chưa có từ vựng nào.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="text-center mt-4">
+            <a href="{{ url_for('home') }}" class="btn btn-secondary">Quay lại trang chủ</a>
+        </div>
+    </div>
+</body>
+</html>
