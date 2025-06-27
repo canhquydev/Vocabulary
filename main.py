@@ -1,12 +1,15 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
-# import pyodbc
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash
 import random
 import requests
 import json
-import psycopg2 # Thêm vào cho Neon/PostgreSQL
-import os # Để đọc biến môi trường
+import psycopg2
+import os
+from functools import wraps
+
 app = Flask(__name__)
 app.secret_key = 'quy_secret_key'
+
+# --- Các hàm và cấu hình API giữ nguyên ---
 API_CONFIGS = [
     {
         "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent",
@@ -86,20 +89,28 @@ def cut_sentence_around_phrase(sentence, target_phrase, word):
     after_phrase = sentence[end_index:].strip()
 
     return before_phrase + " " + hidden_format(word) + " " + after_phrase
-
-
-# Cấu hình kết nối SQL Server
+    
+# Cấu hình kết nối
 def get_db_connection():
-    # Lấy chuỗi kết nối từ biến môi trường trên Render
-    # Biến môi trường này sẽ được cấu hình trên Render dashboard
     neon_conn_string = os.environ.get('DATABASE_URL')
     try:
-            conn = psycopg2.connect(neon_conn_string)
-            return conn
+        conn = psycopg2.connect(neon_conn_string)
+        return conn
     except Exception as e:
         print(f"Error connecting to Neon database: {e}")
-        # Xử lý lỗi kết nối, có thể raise exception hoặc trả về None
         raise
+
+# Decorator để kiểm tra vai trò admin
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if session.get("roles") != "admin":
+            flash("Bạn không có quyền truy cập trang này.", "danger")
+            return redirect(url_for("home"))
+        return f(*args, **kwargs)
+    return decorated_function
+
+# --- Các route đã được cập nhật và thêm mới ---
 
 @app.route("/")
 def index():
@@ -113,20 +124,24 @@ def login():
 
         conn = get_db_connection()
         cursor = conn.cursor()
-
-        query = "SELECT * FROM Account WHERE Username = %s AND Password = %s"
+        query = "SELECT username, roles, active FROM Account WHERE Username = %s AND Password = %s"
         cursor.execute(query, (username, password))
         user = cursor.fetchone()
-
         conn.close()
 
         if user:
-            session["username"] = username
-            # Clear available_words for a new session/login, will be reloaded by home()
-            session.pop('available_words', None) 
+            if user[2] == 0: # Kiểm tra active
+                flash("Tài khoản của bạn chưa được kích hoạt. Vui lòng liên hệ admin.", "danger")
+                return redirect(url_for("login"))
+            
+            session["username"] = user[0]
+            session["roles"] = user[1]
+            session.pop('available_words', None)
             return redirect(url_for("home"))
         else:
-            return "❌ Sai tài khoản hoặc mật khẩu"
+            flash("Sai tài khoản hoặc mật khẩu.", "danger")
+            return redirect(url_for("login"))
+            
     return render_template("login.html")
 
 @app.route("/register", methods=["POST", "GET"])
@@ -136,22 +151,139 @@ def register():
         password = request.form.get("password")
         rpassword = request.form.get('rpassword')
         if password != rpassword:
-            return "Mật khẩu không khớp"
-        roles = "user"
+            flash("Mật khẩu không khớp.", "danger")
+            return redirect(url_for("register"))
+        
+        # Mặc định role là user và active là 0
+        roles = "user" 
         active = 0
+        
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM ACCOUNT WHERE Username = %s", (username,))
         if cursor.fetchone():
             conn.close()
-            return "❌ Tên đăng nhập đã tồn tại!"
-        query = "INSERT INTO ACCOUNT VALUES(%s, %s, %s, %s)"
+            flash("Tên đăng nhập đã tồn tại!", "danger")
+            return redirect(url_for("register"))
+
+        query = "INSERT INTO account (username, password, roles, active) VALUES (%s, %s, %s, %s)"
         cursor.execute(query, (username, password, roles, active))
         conn.commit()
         conn.close()
-        return render_template("login.html")
+
+        flash("Đăng ký thành công! Vui lòng chờ admin kích hoạt tài khoản của bạn.", "success")
+        return redirect(url_for("login"))
+        
     return render_template("register.html")
 
+@app.route("/home")
+def home():
+    if "username" not in session:
+        return redirect("/login")
+    
+    # Logic ôn tập từ vựng giữ nguyên
+    load_and_shuffle_vocabulary()
+    
+    if not session.get('available_words'):
+        return render_template("home.html", username=session["username"], sentence="Không có từ vựng nào.", correct_word="", question_info="0/0", roles=session.get("roles"))
+
+    next_word_info = get_next_word_data()
+
+    return render_template("home.html", 
+                           username=session["username"],
+                           sentence=next_word_info.get("sentence"), 
+                           correct_word=next_word_info.get("correct_word"),
+                           question_info=f"{next_word_info.get('question_number', 0)}/{next_word_info.get('total_questions', 0)}",
+                           roles=session.get("roles"))
+
+# --- Chức năng của Admin ---
+@app.route("/admin")
+@admin_required
+def admin_panel():
+    return render_template("admin.html", username=session.get("username"))
+
+@app.route("/add_vocabulary", methods=["POST"])
+@admin_required
+def add_vocabulary():
+    vocab_input = request.form.get("vocab_input")
+    if not vocab_input or '-' not in vocab_input:
+        flash("Định dạng không hợp lệ. Vui lòng nhập theo dạng 'Word - Mean'.", "danger")
+        return redirect(url_for("admin_panel"))
+
+    parts = [p.strip() for p in vocab_input.split('-', 1)]
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        flash("Từ và nghĩa không được để trống.", "danger")
+        return redirect(url_for("admin_panel"))
+        
+    word, mean = parts
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO vocabulary (word, mean) VALUES (%s, %s)", (word, mean))
+        conn.commit()
+        conn.close()
+        flash(f"Đã thêm từ vựng '{word}' thành công!", "success")
+    except Exception as e:
+        flash(f"Lỗi khi thêm từ vựng: {e}", "danger")
+
+    return redirect(url_for("admin_panel"))
+
+@app.route("/manage_accounts")
+@admin_required
+def manage_accounts():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    # Lấy danh sách tài khoản chưa kích hoạt
+    cursor.execute("SELECT id, username, roles FROM account WHERE active = 0")
+    inactive_accounts = cursor.fetchall()
+    # Lấy danh sách tài khoản đã kích hoạt (trừ admin)
+    cursor.execute("SELECT id, username, roles FROM account WHERE active = 1 AND roles != 'admin'")
+    active_accounts = cursor.fetchall()
+    conn.close()
+    return render_template("manage_accounts.html", inactive_accounts=inactive_accounts, active_accounts=active_accounts, username=session.get("username"))
+
+@app.route("/activate_account/<int:account_id>", methods=["POST"])
+@admin_required
+def activate_account(account_id):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE account SET active = 1 WHERE id = %s", (account_id,))
+        conn.commit()
+        conn.close()
+        flash("Kích hoạt tài khoản thành công!", "success")
+    except Exception as e:
+        flash(f"Lỗi khi kích hoạt tài khoản: {e}", "danger")
+    return redirect(url_for("manage_accounts"))
+
+@app.route("/delete_account/<int:account_id>", methods=["POST"])
+@admin_required
+def delete_account(account_id):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM account WHERE id = %s", (account_id,))
+        conn.commit()
+        conn.close()
+        flash("Xóa tài khoản thành công!", "success")
+    except Exception as e:
+        flash(f"Lỗi khi xóa tài khoản: {e}", "danger")
+    return redirect(url_for("manage_accounts"))
+
+# --- Các hàm và route còn lại giữ nguyên ---
+def load_and_shuffle_vocabulary():
+    """Tải từ vựng từ DB, xáo trộn và lưu vào session."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT word, mean FROM vocabulary")
+    all_words = [{'word': r[0], 'mean': r[1]} for r in cursor.fetchall()]
+    conn.close()
+    random.shuffle(all_words)
+    session['available_words'] = all_words
+    session['total_words'] = len(all_words)
+    session.modified = True
+    
 def get_next_word_data():
     """Lấy dữ liệu cho từ tiếp theo trong session."""
     available_words = session.get('available_words', [])
@@ -178,38 +310,6 @@ def get_next_word_data():
         "question_number": session.get('total_words', 0) - len(available_words),
         "total_questions": session.get('total_words', 0)
     }
-
-def load_and_shuffle_vocabulary():
-    """Tải từ vựng từ DB, xáo trộn và lưu vào session."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT word, mean FROM vocabulary")
-    all_words = [{'word': r[0], 'mean': r[1]} for r in cursor.fetchall()]
-    conn.close()
-    random.shuffle(all_words)
-    session['available_words'] = all_words
-    session['total_words'] = len(all_words)
-    session.modified = True
-
-
-@app.route("/home", methods=["GET"])
-def home():
-    if "username" not in session:
-        return redirect("/login")
-    
-    load_and_shuffle_vocabulary()
-    
-    if not session['available_words']:
-        return render_template("home.html", username=session["username"], sentence="Không có từ vựng nào.", correct_word="", question_info="0/0")
-
-    next_word_info = get_next_word_data()
-
-    return render_template("home.html", 
-                           username=session["username"],
-                           sentence=next_word_info["sentence"], 
-                           correct_word=next_word_info["correct_word"],
-                           question_info=f"{next_word_info['question_number']}/{next_word_info['total_questions']}")
-
 
 @app.route("/check_answer", methods=["POST"])
 def check_answer():
@@ -241,7 +341,6 @@ def next_word():
     
     next_word_info = get_next_word_data()
     return jsonify(next_word_info)
-
 
 @app.route("/review", methods=["POST"])
 def review():
@@ -288,11 +387,11 @@ def regenerate_sentence():
         "success": True,
         "new_sentence": hidden_sentence
     })
-
+    
 @app.route("/logout")
 def logout():
     session.clear()
     return redirect(url_for("index"))
 
 if __name__ == "__main__":
-    app.run(debug=False)
+    app.run(debug=True)

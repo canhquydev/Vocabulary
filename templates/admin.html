@@ -1,0 +1,41 @@
+    <!DOCTYPE html>
+<html>
+<head>
+    <title>Admin - Thêm từ vựng</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <style>
+        body { background-color: #f8f9fa; }
+        .container { max-width: 600px; margin-top: 50px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2 class="text-center mb-4">Chào mừng Admin, {{ username }}!</h2>
+        
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <div class="card">
+            <div class="card-header">
+                Thêm từ vựng mới
+            </div>
+            <div class="card-body">
+                <form action="{{ url_for('add_vocabulary') }}" method="POST">
+                    <div class="form-group">
+                        <label for="vocab_input">Nhập từ vựng</label>
+                        <input type="text" class="form-control" id="vocab_input" name="vocab_input" placeholder="Định dạng: Word - Mean" required>
+                        <small class="form-text text-muted">Hệ thống sẽ tự động tách từ và nghĩa dựa trên dấu "-".</small>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Thêm từ</button>
+                    <a href="{{ url_for('home') }}" class="btn btn-secondary">Quay lại trang chủ</a>
+                </form>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

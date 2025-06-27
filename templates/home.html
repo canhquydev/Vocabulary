@@ -169,6 +169,25 @@
       background-color: #007bff;
       color: white;
     }
+    .admin-controls {
+      margin-top: 20px;
+      border-top: 1px solid #eee;
+      padding-top: 20px;
+      display: flex;
+      justify-content: center;
+      gap: 15px;
+    }
+    .admin-controls a {
+      background-color: #17a2b8;
+      color: white;
+      padding: 10px 20px;
+      border-radius: 5px;
+      text-decoration: none;
+      transition: background-color 0.3s;
+    }
+    .admin-controls a:hover {
+      background-color: #138496;
+    }
   </style>
 </head>
 <body>
@@ -193,7 +212,12 @@
 
     <p id="feedback-message"></p>
     <p id="skip-reveal-message"></p>
-
+    {% if roles == 'admin' %}
+    <div class="admin-controls">
+        <a href="{{ url_for('admin_panel') }}">Thêm từ vựng</a>
+        <a href="{{ url_for('manage_accounts') }}">Quản lý tài khoản</a>
+    </div>
+    {% endif %}
     <br>
     <a href="/logout" id="logout-link">Đăng xuất</a>
   </div>
