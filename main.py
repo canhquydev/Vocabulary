@@ -12,12 +12,12 @@ app.secret_key = 'quy_secret_key'
 # --- Các hàm và cấu hình API giữ nguyên ---
 API_CONFIGS = [
     {
-        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent",
-        "key": "AIzaSyC5Tkm0jMROkEhpvYZdYDQSdYnjv5qhh5s"
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=GEMINI_API_KEY",
+        "key": "AIzaSyB6oo4MOqTTq07tLpWozpZ2NoKo45vLc14"
     },
     {
-        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent",
-        "key": "AIzaSyCMQ_deEV-ZSIvyJuot5Dxpyrd8qzEIpag"
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=GEMINI_API_KEY",
+        "key": "AIzaSyCTHUesZlrg23UFTTVpDEGe54gSpHdZ9KU"
     }
 ]
 
