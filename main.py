@@ -246,7 +246,7 @@ def skip_word():
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT word, mean FROM vocabulary")
-        session['available_words'] = [{'word': r.word, 'mean': r.mean} for r in cursor.fetchall()]
+        session['available_words'] = [{'word': r[0], 'mean': r[1]} for r in cursor.fetchall()]
         conn.close()
         random.shuffle(session['available_words'])
         session.modified = True # Mark session as modified
@@ -291,7 +291,7 @@ def regenerate_sentence():
     if not result:
         return jsonify({"success": False, "message": f"Không tìm thấy nghĩa cho từ '{word}'."}), 404
 
-    meaning = result.mean
+    meaning = result[0]
     sentence = generate_sentence_with_word_and_meaning(word, meaning)
     if sentence:
         hidden_sentence = cut_sentence_around_phrase(sentence, word, word)
