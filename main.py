@@ -1,9 +1,12 @@
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash
-import random
+import io
+import PIL.Image
+import google.generativeai as genai
 import requests
 import json
 import os
+import random # Add random import if not already present
 from functools import wraps
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash
 from supabase import create_client, Client
 
 app = Flask(__name__)
@@ -33,6 +36,17 @@ API_CONFIGS = [
     }
     for key in gemini_keys_str.split(',') if key.strip()
 ] if gemini_keys_str else []
+
+# Configure Gemini for vision model (using the first key from API_CONFIGS)
+gemini_vision_model = None
+if API_CONFIGS:
+    try:
+        genai.configure(api_key=API_CONFIGS[0]['key'])
+        gemini_vision_model = genai.GenerativeModel('gemini-1.5-flash')
+    except Exception as e:
+        print(f"Lỗi khi cấu hình Gemini Vision Model: {e}")
+else:
+    print("WARNING: No Gemini API keys found. Gemini Vision features will not work.")
 
 # --- Các hàm phụ trợ ---
 def generate_sentence_with_word_and_meaning(word, meaning):
@@ -83,6 +97,44 @@ def cut_sentence_around_phrase(sentence, target_phrase, word):
     before_phrase = sentence[:start_index].strip()
     after_phrase = sentence[end_index:].strip()
     return before_phrase + " " + hidden_format(word) + " " + after_phrase
+
+# --- New helper functions for image processing ---
+def get_text_from_image_gemini_vision(image_bytes):
+    if not gemini_vision_model:
+        return None, "Lỗi: Gemini Vision Model chưa được cấu hình."
+    try:
+        img = PIL.Image.open(io.BytesIO(image_bytes))
+        prompt_parts = ["Hãy trích xuất tất cả văn bản có trong hình ảnh này.", img]
+        response = gemini_vision_model.generate_content(prompt_parts)
+        if response.parts:
+            extracted_text = "".join([part.text for part in response.parts if hasattr(part, 'text')]).strip()
+            return extracted_text, None
+        else:
+            return None, "Không tìm thấy văn bản nào trong hình ảnh hoặc phản hồi rỗng từ Gemini Vision."
+    except Exception as e:
+        return None, f"Đã xảy ra lỗi khi trích xuất văn bản từ hình ảnh: {e}"
+
+def format_extracted_text_to_vocabulary(text_content):
+    if not API_CONFIGS:
+        return None, "Lỗi: Không có khóa API nào của Gemini được cấu hình."
+
+    for config in API_CONFIGS:
+        final_url = config['url'].replace('GEMINI_API_KEY', config['key'])
+        headers = {"Content-Type": "application/json"}
+        data = {"contents": [{"parts": [{"text": f"Dựa vào văn bản sau, hãy lọc ra các từ vựng và nghĩa theo định dạng 'từ vựng - nghĩa', mỗi cặp một dòng. Không viết thêm bất kỳ chữ nào khác ngoài danh sách. Văn bản: {text_content}"}]}]}
+        try:
+            response = requests.post(final_url, headers=headers, data=json.dumps(data), timeout=20)
+            if response.status_code == 200:
+                response_data = response.json()
+                generated_text = response_data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
+                return generated_text.replace('**', ''), None
+            elif response.status_code == 429:
+                continue # Try next key
+            else:
+                return None, f"Lỗi Gemini API (Mã lỗi: {response.status_code}). Chi tiết: {response.text}"
+        except requests.RequestException as e:
+            return None, f"Lỗi kết nối mạng khi định dạng từ vựng: {e}"
+    return None, "Tất cả các khóa API Gemini đều không hoạt động hoặc bị giới hạn."
     
 # --- Decorators ---
 def login_required(f):
@@ -187,7 +239,14 @@ def home():
 def manage_vocabulary():
     user_id = session.get("user_id")
     response = supabase.table('vocabulary').select("id, word, mean").eq('user_id', user_id).order('id').execute()
-    return render_template("manage_vocabulary.html", all_vocab=response.data, username=session.get("username"))
+    
+    # Get extracted vocabulary from session if available
+    extracted_vocab_display = session.pop('extracted_vocab_for_display', '') # Pop to clear after use
+
+    return render_template("manage_vocabulary.html", 
+                           all_vocab=response.data, 
+                           username=session.get("username"),
+                           extracted_vocab=extracted_vocab_display)
 
 @app.route("/add_vocabulary", methods=["POST"])
 @login_required
@@ -252,6 +311,44 @@ def delete_all_vocabulary():
         flash(f"Lỗi khi xóa từ vựng: {e}", "danger")
     return redirect(url_for("manage_vocabulary"))
 
+@app.route("/upload_and_extract_vocabulary", methods=["POST"])
+@login_required
+def upload_and_extract_vocabulary():
+    if 'image_file' not in request.files:
+        flash("Không có tệp hình ảnh nào được tải lên.", "danger")
+        return redirect(url_for("manage_vocabulary"))
+
+    file = request.files['image_file']
+    if file.filename == '':
+        flash("Không có tệp hình ảnh nào được chọn.", "danger")
+        return redirect(url_for("manage_vocabulary"))
+
+    if file:
+        image_bytes = file.read()
+        extracted_text, error_vision = get_text_from_image_gemini_vision(image_bytes)
+
+        if error_vision:
+            flash(f"Lỗi trích xuất văn bản từ hình ảnh: {error_vision}", "danger")
+            return redirect(url_for("manage_vocabulary"))
+        
+        if not extracted_text:
+            flash("Không tìm thấy văn bản nào trong hình ảnh.", "warning")
+            return redirect(url_for("manage_vocabulary"))
+
+        formatted_vocab, error_format = format_extracted_text_to_vocabulary(extracted_text)
+
+        if error_format:
+            flash(f"Lỗi định dạng từ vựng: {error_format}", "danger")
+            return redirect(url_for("manage_vocabulary"))
+        
+        if formatted_vocab:
+            session['extracted_vocab_for_display'] = formatted_vocab
+            flash("Đã trích xuất và định dạng từ vựng từ hình ảnh.", "success")
+        else:
+            flash("Không thể định dạng từ vựng từ văn bản đã trích xuất.", "warning")
+
+    return redirect(url_for("manage_vocabulary"))
+
 # --- Chức năng của Admin ---
 @app.route("/manage_accounts")
 @admin_required
@@ -279,6 +376,11 @@ def delete_account(account_id):
     except Exception as e:
         flash(f"Lỗi khi xóa tài khoản: {e}", "danger")
     return redirect(url_for("manage_accounts"))
+
+@app.route("/admin")
+@admin_required
+def admin_page():
+    return render_template("admin.html", username=session.get("username"))
 
 # --- API cho chức năng học từ vựng ---
 def load_and_shuffle_vocabulary():

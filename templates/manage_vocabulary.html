@@ -34,13 +34,30 @@
 
         <div class="card mb-4">
             <div class="card-header">
+                Trích xuất từ vựng từ hình ảnh
+            </div>
+            <div class="card-body">
+                <form action="{{ url_for('upload_and_extract_vocabulary') }}" method="POST" enctype="multipart/form-data">
+                    <div class="form-group">
+                        <label for="image_file">Chọn hình ảnh để trích xuất từ vựng:</label>
+                        <input type="file" class="form-control-file" id="image_file" name="image_file" accept="image/*" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Trích xuất từ hình ảnh</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header">
                 Thêm từ vựng mới (Thêm nhiều dòng)
             </div>
             <div class="card-body">
                 <form action="{{ url_for('add_vocabulary') }}" method="POST">
                     <div class="form-group">
                         <label for="vocab_input_list">Dán danh sách từ vựng vào đây:</label>
-                        <textarea class="form-control" id="vocab_input_list" name="vocab_input_list" rows="8" placeholder="Word 1 - Meaning 1&#10;Word 2 - Meaning 2&#10;..."></textarea>
+                        <textarea class="form-control" id="vocab_input_list" name="vocab_input_list" rows="8" placeholder="Word 1 - Meaning 1&#10;Word 2 - Meaning 2&#10;...">{#
+                            #}{% if extracted_vocab %}{{ extracted_vocab }}{% endif %}{#
+                        #}</textarea>
                         <small class="form-text text-muted">Mỗi dòng là một cặp 'Từ - Nghĩa'.</small>
                     </div>
                     <button type="submit" class="btn btn-primary">Thêm danh sách</button>
