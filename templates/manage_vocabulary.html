@@ -40,7 +40,7 @@
                 <form action="{{ url_for('upload_and_extract_vocabulary') }}" method="POST" enctype="multipart/form-data">
                     <div class="form-group">
                         <label for="image_file">Chọn hình ảnh để trích xuất từ vựng:</label>
-                        <input type="file" class="form-control-file" id="image_file" name="image_file" accept="image/*" required>
+                        <input type="file" class="form-control-file" id="image_file" name="image_file" accept="image/*" multiple required>
                     </div>
                     <button type="submit" class="btn btn-primary">Trích xuất từ hình ảnh</button>
                 </form>

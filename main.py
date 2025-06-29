@@ -4,7 +4,7 @@ import google.generativeai as genai
 import requests
 import json
 import os
-import random # Add random import if not already present
+import random
 from functools import wraps
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash
 from supabase import create_client, Client
@@ -314,38 +314,58 @@ def delete_all_vocabulary():
 @app.route("/upload_and_extract_vocabulary", methods=["POST"])
 @login_required
 def upload_and_extract_vocabulary():
-    if 'image_file' not in request.files:
-        flash("Không có tệp hình ảnh nào được tải lên.", "danger")
+    files = request.files.getlist('image_file')
+
+    if not files or all(f.filename == '' for f in files):
+        flash("Không có tệp hình ảnh nào được chọn hoặc tải lên.", "danger")
         return redirect(url_for("manage_vocabulary"))
 
-    file = request.files['image_file']
-    if file.filename == '':
-        flash("Không có tệp hình ảnh nào được chọn.", "danger")
-        return redirect(url_for("manage_vocabulary"))
+    all_extracted_vocabs = []
+    total_files_processed = 0
+    errors_occurred = 0
 
-    if file:
-        image_bytes = file.read()
-        extracted_text, error_vision = get_text_from_image_gemini_vision(image_bytes)
+    for file in files:
+        if file.filename == '':
+            continue
 
-        if error_vision:
-            flash(f"Lỗi trích xuất văn bản từ hình ảnh: {error_vision}", "danger")
-            return redirect(url_for("manage_vocabulary"))
-        
-        if not extracted_text:
-            flash("Không tìm thấy văn bản nào trong hình ảnh.", "warning")
-            return redirect(url_for("manage_vocabulary"))
+        try:
+            image_bytes = file.read()
+            extracted_text, error_vision = get_text_from_image_gemini_vision(image_bytes)
 
-        formatted_vocab, error_format = format_extracted_text_to_vocabulary(extracted_text)
+            if error_vision:
+                flash(f"Lỗi trích xuất văn bản từ hình ảnh '{file.filename}': {error_vision}", "danger")
+                errors_occurred += 1
+                continue
+            
+            if not extracted_text:
+                flash(f"Không tìm thấy văn bản nào trong hình ảnh '{file.filename}'.", "warning")
+                continue
 
-        if error_format:
-            flash(f"Lỗi định dạng từ vựng: {error_format}", "danger")
-            return redirect(url_for("manage_vocabulary"))
-        
-        if formatted_vocab:
-            session['extracted_vocab_for_display'] = formatted_vocab
-            flash("Đã trích xuất và định dạng từ vựng từ hình ảnh.", "success")
-        else:
-            flash("Không thể định dạng từ vựng từ văn bản đã trích xuất.", "warning")
+            formatted_vocab, error_format = format_extracted_text_to_vocabulary(extracted_text)
+
+            if error_format:
+                flash(f"Lỗi định dạng từ vựng từ hình ảnh '{file.filename}': {error_format}", "danger")
+                errors_occurred += 1
+                continue
+            
+            if formatted_vocab:
+                all_extracted_vocabs.append(formatted_vocab)
+                total_files_processed += 1
+            else:
+                flash(f"Không thể định dạng từ vựng từ văn bản đã trích xuất từ hình ảnh '{file.filename}'.", "warning")
+
+        except Exception as e:
+            flash(f"Lỗi xử lý tệp '{file.filename}': {e}", "danger")
+            errors_occurred += 1
+
+    if all_extracted_vocabs:
+        session['extracted_vocab_for_display'] = "\n\n".join(all_extracted_vocabs)
+        flash_message = f"Đã trích xuất và định dạng từ vựng thành công từ {total_files_processed} hình ảnh."
+        if errors_occurred > 0:
+            flash_message += f" ({errors_occurred} hình ảnh gặp lỗi)."
+        flash(flash_message, "success")
+    else:
+        flash("Không có từ vựng nào được trích xuất thành công từ các hình ảnh đã tải lên.", "warning")
 
     return redirect(url_for("manage_vocabulary"))
 
